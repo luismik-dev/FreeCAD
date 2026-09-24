@@ -654,6 +654,12 @@ class ExtrudeWithoutProfile(unittest.TestCase):
         FreeCADGui.activateView("Gui::View3DInventor", True)
         FreeCADGui.activeView().setActiveObject("pdbody", self.Body)
         FreeCADGui.Selection.clearSelection()
+        # Let timers of earlier tests closing dialogs expire before looking for a warning
+        import time
+
+        end = time.time() + 0.3
+        while time.time() < end:
+            QApplication.processEvents()
 
     def tearDown(self):
         FreeCADGui.Control.closeDialog()
@@ -708,9 +714,13 @@ class ExtrudeWithoutProfile(unittest.TestCase):
     def testAcceptWithoutProfileKeepsDialog(self):
         self.startPad()
         warning = CallableRejectUnexpectedDialog()
-        QtCore.QTimer.singleShot(200, warning)
+        # Look for the warning until it shows, it may take a while to open
+        timer = QtCore.QTimer()
+        timer.timeout.connect(warning)
+        timer.start(100)
         FreeCADGui.Control.activeTaskDialog().accept()
         self.processEvents()
+        timer.stop()
         self.assertTrue(warning.shown, "No warning about the missing profile")
         self.assertIsNotNone(FreeCADGui.Control.activeTaskDialog())
 

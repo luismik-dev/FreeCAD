@@ -27,11 +27,14 @@
 #include <Gui/Application.h>
 #include <Gui/Command.h>
 #include <Gui/Control.h>
+#include <Gui/DockWindowManager.h>
+#include <Gui/MainWindow.h>
 #include <Gui/MDIView.h>
 #include <Mod/Sketcher/Gui/Workbench.h>
 #include <Mod/PartDesign/App/Body.h>
 #include <Mod/PartDesign/App/FeatureMultiTransform.h>
 
+#include "Timeline.h"
 #include "Utils.h"
 #include "Workbench.h"
 #include "WorkflowManager.h"
@@ -484,6 +487,26 @@ Gui::MenuItem* Workbench::setupMenuBar() const
     item = root->findItem("&Edit");
     Gui::MenuItem* dup = item->findItem("Std_DuplicateSelection");
     dup->setCommand("PartDesign_DuplicateSelection");
+
+    return root;
+}
+
+Gui::DockWindowItems* Workbench::setupDockWindows() const
+{
+    Gui::DockWindowItems* root = StdWorkbench::setupDockWindows();
+
+    // The timeline is created once and shared by the part design workbenches
+    auto dockManager = Gui::DockWindowManager::instance();
+    if (!dockManager->findRegisteredDockWindow(TimelineView::DockName)) {
+        auto timeline = new TimelineView(Gui::getMainWindow());
+        timeline->setObjectName(QString::fromLatin1(TimelineView::DockName));
+        dockManager->registerDockWindow(TimelineView::DockName, timeline);
+    }
+    root->addDockWidget(
+        TimelineView::DockName,
+        Qt::BottomDockWidgetArea,
+        Gui::DockWindowOption::Visible
+    );
 
     return root;
 }

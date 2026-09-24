@@ -461,6 +461,65 @@ class PadProfileRegions(unittest.TestCase):
         self.assertEqual(self.Sketch.Visibility, sketchVisible)
 
 
+class Timeline(unittest.TestCase):
+    """The timeline shows the features of the active body and moves its tip"""
+
+    def setUp(self):
+        import TestSketcherApp
+
+        FreeCADGui.activateWorkbench("PartDesignWorkbench")
+        self.Doc = App.newDocument("Timeline")
+        self.Body = self.Doc.addObject("PartDesign::Body", "Body")
+        self.Sketch = self.Body.newObject("Sketcher::SketchObject", "Sketch")
+        TestSketcherApp.CreateRectangleSketch(self.Sketch, (0, 0), (10, 10))
+        self.Pad = self.Body.newObject("PartDesign::Pad", "Pad")
+        self.Pad.Profile = self.Sketch
+        self.Pad.Length = 5
+        self.Pad2 = self.Body.newObject("PartDesign::Pad", "Pad2")
+        self.Pad2.Profile = self.Sketch
+        self.Pad2.Length = 10
+        self.Doc.recompute()
+        FreeCADGui.activateView("Gui::View3DInventor", True)
+        FreeCADGui.activeView().setActiveObject("pdbody", self.Body)
+        self.processEvents()
+        dock = FreeCADGui.getMainWindow().findChild(QtGui.QDockWidget, "PartDesign_Timeline")
+        self.assertIsNotNone(dock, "Timeline dock not found")
+        self.timeline = dock.widget()
+        self.list = self.timeline.findChild(QtGui.QListWidget)
+
+    def tearDown(self):
+        App.closeDocument(self.Doc.Name)
+
+    @staticmethod
+    def processEvents():
+        for _ in range(5):
+            QApplication.processEvents()
+
+    def rollTo(self, slot):
+        QtCore.QMetaObject.invokeMethod(self.timeline, "rollTo", QtCore.Q_ARG(int, slot))
+        self.processEvents()
+
+    def testShowsFeaturesAndMovesTip(self):
+        self.assertEqual(self.list.count(), 3)
+        self.assertEqual(self.Body.Tip, self.Pad2)
+
+        self.rollTo(2)
+        self.assertEqual(self.Body.Tip, self.Pad)
+        self.assertEqual(self.list.count(), 3)
+
+        self.rollTo(0)
+        self.assertIsNone(self.Body.Tip)
+
+        QtCore.QMetaObject.invokeMethod(self.timeline, "rollToEnd")
+        self.processEvents()
+        self.assertEqual(self.Body.Tip, self.Pad2)
+
+    def testNoActiveBody(self):
+        FreeCADGui.activeView().setActiveObject("pdbody", None)
+        self.processEvents()
+        self.assertTrue(self.list.isHidden())
+
+
 class PadOperation(unittest.TestCase):
     """The operation of the Pad/Pocket task panel changes the feature type or the body"""
 

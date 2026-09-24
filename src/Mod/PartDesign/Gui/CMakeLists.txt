@@ -227,6 +227,8 @@ SET(PartDesignGuiModule_SRCS
     Workbench.h
     DesignWorkbench.cpp
     DesignWorkbench.h
+    Timeline.cpp
+    Timeline.h
     WorkflowManager.cpp
     WorkflowManager.h
 )

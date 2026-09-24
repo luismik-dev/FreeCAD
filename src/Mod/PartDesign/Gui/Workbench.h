@@ -60,6 +60,7 @@ public:
 protected:
     Gui::MenuItem* setupMenuBar() const override;
     Gui::ToolBarItem* setupToolBars() const override;
+    Gui::DockWindowItems* setupDockWindows() const override;
 };
 
 }  // namespace PartDesignGui

@@ -66,6 +66,8 @@
 #include <Gui/ViewProviderLink.h>
 #include <Gui/ViewProviderGeometryObject.h>
 #include <Gui/ViewParams.h>
+#include <Gui/Workbench.h>
+#include <Gui/WorkbenchManager.h>
 #include <Gui/Selection/SoFCSelectionAction.h>
 
 #include <Mod/Assembly/App/AssemblyLink.h>
@@ -84,6 +86,18 @@
 
 using namespace Assembly;
 using namespace AssemblyGui;
+
+namespace
+{
+// The workbench of PartDesign combining part design and assembly tools
+constexpr const char* designWorkbenchName = "DesignWorkbench";
+
+bool isDesignWorkbenchActive()
+{
+    auto workbench = Gui::WorkbenchManager::instance()->active();
+    return workbench && workbench->name() == designWorkbenchName;
+}
+}  // namespace
 
 void printPlacement(Base::Placement plc, const char* name)
 {
@@ -175,7 +189,8 @@ bool ViewProviderAssembly::doubleClicked()
                 .GetGroup("BaseApp")
                 ->GetGroup("Preferences")
                 ->GetGroup("Mod/Assembly")
-                ->GetBool("SwitchToWB", true)) {
+                ->GetBool("SwitchToWB", true)
+            && !isDesignWorkbenchActive()) {
             Gui::Command::assureWorkbench("AssemblyWorkbench");
         }
 
@@ -1959,7 +1974,9 @@ void ViewProviderAssembly::UpdateSolverInformation()
 
 void ViewProviderAssembly::onWorkbenchActivated(const QString& name)
 {
-    bool isAssemblyWb = (name == QLatin1String("AssemblyWorkbench"));
+    // The Design workbench offers the assembly tools as well
+    bool isAssemblyWb = (name == QLatin1String("AssemblyWorkbench"))
+        || (name == QLatin1String(designWorkbenchName));
     updateTaskPanel(isAssemblyWb);
 }
 

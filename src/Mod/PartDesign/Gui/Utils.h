@@ -24,6 +24,8 @@
 
 #pragma once
 
+#include <string>
+
 /** \file PartDesign/Gui/Utils.h
  *  This file contains some utility function used over PartDesignGui module
  */
@@ -121,5 +123,9 @@ std::vector<App::DocumentObject*> collectMovableDependencies(
 );
 /// Relink sketches and datums to target body's origin
 void relinkToOrigin(App::DocumentObject* feature, PartDesign::Body* body);
+
+/// Switches to the PartDesign workbench unless a workbench offering the part design tools as
+/// well, like the Design workbench, is active. Returns the name of the previous workbench.
+std::string assurePartDesignWorkbench();
 
 }  // namespace PartDesignGui

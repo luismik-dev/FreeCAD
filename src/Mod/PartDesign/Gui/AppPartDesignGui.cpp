@@ -32,6 +32,7 @@
 #include <Gui/Application.h>
 #include <Gui/Language/Translator.h>
 
+#include "DesignWorkbench.h"
 #include "Workbench.h"
 #include "ViewProviderBase.h"
 #include "ViewProviderBody.h"
@@ -127,6 +128,7 @@ PyMOD_INIT_FUNC(PartDesignGui)
 
     // clang-format off
     PartDesignGui::Workbench                 ::init();
+    PartDesignGui::DesignWorkbench           ::init();
     PartDesignGui::ViewProvider              ::init();
     PartDesignGui::ViewProviderPython        ::init();
     PartDesignGui::ViewProviderBody          ::init();

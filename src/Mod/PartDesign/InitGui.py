@@ -59,18 +59,61 @@ class PartDesignWorkbench(Workbench):
         import PartDesignGui
         import PartDesign
 
-        from PartDesign.InvoluteGearFeature import CommandInvoluteGear
+        commands = Gui.listCommands()
+        if "PartDesign_InvoluteGear" not in commands:
+            from PartDesign.InvoluteGearFeature import CommandInvoluteGear
 
-        Gui.addCommand("PartDesign_InvoluteGear", CommandInvoluteGear())
+            Gui.addCommand("PartDesign_InvoluteGear", CommandInvoluteGear())
 
-        from PartDesign.SprocketFeature import CommandSprocket
+        if "PartDesign_Sprocket" not in commands:
+            from PartDesign.SprocketFeature import CommandSprocket
 
-        FreeCADGui.addCommand("PartDesign_Sprocket", CommandSprocket())
+            FreeCADGui.addCommand("PartDesign_Sprocket", CommandSprocket())
 
     def GetClassName(self):
         return "PartDesignGui::Workbench"
 
 
+class DesignWorkbench(PartDesignWorkbench):
+    "Combined part design and assembly workbench object"
+
+    def __init__(self):
+        self.__class__.Icon = (
+            FreeCAD.getResourceDir() + "Mod/PartDesign/Resources/icons/PartDesignWorkbench.svg"
+        )
+        self.__class__.MenuText = "Design (Part & Assembly)"
+        self.__class__.ToolTip = "Design parts and assemble them without switching workbenches"
+
+    def Initialize(self):
+        super().Initialize()
+
+        import SketcherGui
+
+        # The assembly commands are optional, e.g. if the Assembly module is not built
+        try:
+            import AssemblyGui
+            import CommandCreateAssembly
+            import CommandInsertLink
+            import CommandInsertNewPart
+            import CommandCreateJoint
+            import CommandSolveAssembly
+            import CommandExportASMT
+            import CommandCreateView
+            import CommandCreateSimulation
+            import CommandCreateSnapshot
+            import CommandCreateBom
+        except ImportError as err:
+            FreeCAD.Console.PrintWarning(
+                "Assembly commands are not available in the Design workbench: {err}\n".format(
+                    err=str(err)
+                )
+            )
+
+    def GetClassName(self):
+        return "PartDesignGui::DesignWorkbench"
+
+
 Gui.addWorkbench(PartDesignWorkbench())
+Gui.addWorkbench(DesignWorkbench())
 
 FreeCAD.__unit_test__ += ["TestPartDesignGui"]

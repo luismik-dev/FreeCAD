@@ -49,6 +49,7 @@
 
 #include "TaskFeatureParameters.h"
 #include "StyleParameters.h"
+#include "Utils.h"
 
 #include "ViewProvider.h"
 #include "ViewProviderPy.h"
@@ -189,7 +190,7 @@ bool ViewProvider::setEdit(int ModNum)
         Gui::Selection().clearSelection();
 
         // always change to PartDesign WB, remember where we come from
-        oldWb = Gui::Command::assureWorkbench("PartDesignWorkbench");
+        oldWb = PartDesignGui::assurePartDesignWorkbench();
 
         // start the edit dialog if
         if (!featureDlg) {

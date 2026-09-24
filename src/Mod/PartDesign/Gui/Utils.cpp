@@ -41,6 +41,7 @@
 #include <Mod/PartDesign/App/PartDesignParameter.h>
 #include <Mod/Sketcher/App/SketchObject.h>
 
+#include "DesignWorkbench.h"
 #include "Utils.h"
 #include "DlgActiveBody.h"
 #include "ReferenceSelection.h"
@@ -701,6 +702,14 @@ void relinkToOrigin(App::DocumentObject* feat, PartDesign::Body* targetbody)
             }
         }
     }
+}
+
+std::string assurePartDesignWorkbench()
+{
+    if (DesignWorkbench::isActive()) {
+        return DesignWorkbench::WorkbenchName;
+    }
+    return Gui::Command::assureWorkbench("PartDesignWorkbench");
 }
 
 }  // namespace PartDesignGui

@@ -225,6 +225,8 @@ SET(PartDesignGuiModule_SRCS
     Utils.h
     Workbench.cpp
     Workbench.h
+    DesignWorkbench.cpp
+    DesignWorkbench.h
     WorkflowManager.cpp
     WorkflowManager.h
 )

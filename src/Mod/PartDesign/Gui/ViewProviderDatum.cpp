@@ -272,7 +272,7 @@ bool ViewProviderDatum::setEdit(int ModNum)
         // clear the selection (convenience)
         Gui::Selection().clearSelection();
 
-        oldWb = Gui::Command::assureWorkbench("PartDesignWorkbench");
+        oldWb = PartDesignGui::assurePartDesignWorkbench();
 
         // start the edit dialog
         if (datumDlg) {

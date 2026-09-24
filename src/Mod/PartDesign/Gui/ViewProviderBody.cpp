@@ -263,7 +263,7 @@ void ViewProviderBody::toggleActiveBody()
                 ->GetGroup("Preferences")
                 ->GetGroup("Mod/PartDesign")
                 ->GetBool("SwitchToWB", true)) {
-            Gui::Command::assureWorkbench("PartDesignWorkbench");
+            PartDesignGui::assurePartDesignWorkbench();
         }
 
         // and set correct active objects

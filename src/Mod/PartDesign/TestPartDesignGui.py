@@ -564,6 +564,60 @@ class FusionShortcuts(unittest.TestCase):
         self.assertEqual(len(pads), 1)
         self.assertEqual(FreeCADGui.ActiveDocument.getInEdit().Object, pads[0])
 
+    def testSketchKeysRepeat(self):
+        """A group button takes over the shortcut of its last used tool, so the keys of
+        the pack must be assigned to the tools and keep working on every press"""
+        try:
+            from PySide6.QtTest import QTest
+        except ImportError:
+            self.skipTest("QtTest is not available")
+        import xml.etree.ElementTree as ET
+
+        path = App.getResourceDir() + "Gui/PreferencePacks/Fusion 360/Fusion 360.cfg"
+        root = ET.parse(path).getroot()
+        shortcuts = {
+            node.get("Name"): node.text
+            for group in root.iter("FCParamGroup")
+            if group.get("Name") == "Shortcut"
+            for node in group
+            if node.tag == "FCText"
+        }
+        commands = {name: FreeCADGui.Command.get(name) for name in shortcuts}
+        tools = {key: name for name, key in shortcuts.items() if key in ("R", "C", "T", "P")}
+
+        body = self.Doc.addObject("PartDesign::Body", "Body")
+        sketch = body.newObject("Sketcher::SketchObject", "Sketch")
+        self.Doc.recompute()
+        FreeCADGui.activateView("Gui::View3DInventor", True)
+
+        oldShortcuts = {name: command.getShortcut() for name, command in commands.items()}
+        fired = []
+        try:
+            for name, command in commands.items():
+                command.setShortcut(shortcuts[name])
+            for action in FreeCADGui.getMainWindow().findChildren(QtGui.QAction):
+                for key, name in tools.items():
+                    if action.objectName() == name:
+                        action.triggered.connect(lambda *args, key=key: fired.append(key))
+            FreeCADGui.ActiveDocument.setEdit(sketch)
+            self.processEvents()
+            viewer = FreeCADGui.ActiveDocument.ActiveView.graphicsView()
+            viewer.setFocus()
+            self.processEvents(300)
+            for key in "RRCCTTPP":
+                QTest.keyClick(QApplication.focusWidget(), getattr(QtCore.Qt, "Key_" + key))
+                # The group button shares the key once used, which delays the shortcut
+                self.processEvents(800)
+                QTest.keyClick(QApplication.focusWidget(), QtCore.Qt.Key_Escape)
+                self.processEvents(300)
+        finally:
+            for name, command in commands.items():
+                command.resetShortcut()
+                if oldShortcuts[name] != command.getShortcut():
+                    command.setShortcut(oldShortcuts[name])
+
+        self.assertEqual("".join(fired), "RRCCTTPP")
+
 
 class ExtrudeWithoutProfile(unittest.TestCase):
     """Pad without selection starts with no profile, which is picked in the task panel"""

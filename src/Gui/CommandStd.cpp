@@ -25,6 +25,7 @@
 #include <boost/smart_ptr/scoped_ptr.hpp>
 
 #include <QApplication>
+#include <QCursor>
 #include <QMessageBox>
 #include <QRegularExpression>
 #include <QRegularExpressionMatch>
@@ -41,6 +42,7 @@
 #include "Action.h"
 #include "BitmapFactory.h"
 #include "Command.h"
+#include "CommandSearch.h"
 #include "Dialogs/DlgAbout.h"
 #include "Dialogs/DlgCustomizeImp.h"
 #include "Dialogs/DlgParameterImp.h"
@@ -569,6 +571,29 @@ void StdCmdCommandLine::activated(int iMsg)
     // pop up the main window
     show ? getMainWindow()->showMaximized() : getMainWindow()->showNormal();
     qApp->processEvents();
+}
+
+//===========================================================================
+// Std_CommandSearch
+//===========================================================================
+DEF_STD_CMD(StdCmdCommandSearch)
+
+StdCmdCommandSearch::StdCmdCommandSearch()
+    : Command("Std_CommandSearch")
+{
+    sGroup = "Tools";
+    sMenuText = QT_TR_NOOP("Command &Search…");
+    sToolTipText = QT_TR_NOOP("Searches a command by its name and runs it");
+    sWhatsThis = "Std_CommandSearch";
+    sStatusTip = sToolTipText;
+    eType = 0;
+}
+
+void StdCmdCommandSearch::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    auto popup = new CommandSearchPopup(getMainWindow());
+    popup->popup(QCursor::pos());
 }
 
 //===========================================================================
@@ -1101,6 +1126,7 @@ void CreateStdCommands()
     rcCmdMgr.addCommand(new StdCmdDlgPreferences());
     rcCmdMgr.addCommand(new StdCmdDlgCustomize());
     rcCmdMgr.addCommand(new StdCmdCommandLine());
+    rcCmdMgr.addCommand(new StdCmdCommandSearch());
     rcCmdMgr.addCommand(new StdCmdWorkbench());
     rcCmdMgr.addCommand(new StdCmdRecentFiles());
     rcCmdMgr.addCommand(new StdCmdRecentMacros());

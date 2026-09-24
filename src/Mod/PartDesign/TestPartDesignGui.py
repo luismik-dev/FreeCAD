@@ -461,6 +461,42 @@ class PadProfileRegions(unittest.TestCase):
         self.assertEqual(self.Sketch.Visibility, sketchVisible)
 
 
+class CommandSearch(unittest.TestCase):
+    """Std_CommandSearch runs the command that is picked from the completion list"""
+
+    def setUp(self):
+        self.Doc = App.newDocument("CommandSearch")
+        FreeCADGui.activateView("Gui::View3DInventor", True)
+
+    def tearDown(self):
+        popup = QApplication.activePopupWidget()
+        if popup is not None:
+            popup.close()
+        App.closeDocument(self.Doc.Name)
+
+    def testRunCommandFromSearch(self):
+        try:
+            from PySide6.QtTest import QTest
+        except ImportError:
+            self.skipTest("QtTest is not available")
+
+        FreeCADGui.runCommand("Std_CommandSearch", 0)
+        QApplication.processEvents()
+        popup = QApplication.activePopupWidget()
+        self.assertIsNotNone(popup, "Search popup not shown")
+        edit = popup.findChild(QtGui.QLineEdit)
+        self.assertIsNotNone(edit)
+
+        QTest.keyClicks(edit, "PartDesign_Body")
+        QApplication.processEvents()
+        QTest.keyClick(edit, QtCore.Qt.Key_Down)
+        QTest.keyClick(edit, QtCore.Qt.Key_Return)
+        for _ in range(5):
+            QApplication.processEvents()
+
+        self.assertEqual(len(self.Doc.findObjects("PartDesign::Body")), 1)
+
+
 class ExtrudeWithoutProfile(unittest.TestCase):
     """Pad without selection starts with no profile, which is picked in the task panel"""
 

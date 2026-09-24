@@ -290,3 +290,94 @@ class ConstructionPlaneTestCases(unittest.TestCase):
         FreeCADGui.updateGui()
         self.assertIsNotNone(FreeCADGui.Control.activeTaskDialog())
         self.assertIsNone(self.findWidget(QtWidgets.QComboBox, "typeCombo"))
+
+
+class ConstructionPlaneCommandTestCases(unittest.TestCase):
+    """The commands creating construction planes"""
+
+    def setUp(self):
+        self.Doc = FreeCAD.newDocument("ConstructionPlaneCommand")
+        self.Box = self.Doc.addObject("Part::Box", "Box")
+        self.Doc.recompute()
+        FreeCADGui.Selection.clearSelection()
+
+    def tearDown(self):
+        FreeCADGui.Control.closeDialog()
+        FreeCADGui.getDocument(self.Doc.Name).resetEdit()
+        FreeCAD.closeDocument(self.Doc.Name)
+
+    def planes(self):
+        return self.Doc.findObjects("Part::DatumPlane")
+
+    def testOffsetPlaneFromSelection(self):
+        FreeCADGui.Selection.addSelection(self.Doc.Name, self.Box.Name, "Face6")
+        FreeCADGui.runCommand("Part_OffsetPlane")
+        FreeCADGui.updateGui()
+        FreeCADGui.Control.activeTaskDialog().accept()
+        self.assertEqual(len(self.planes()), 1)
+        self.assertEqual(self.planes()[0].MapMode, "FlatFace")
+        self.assertEqual(FreeCADGui.Selection.getSelection()[0], self.planes()[0])
+
+    def testSelectionChoosesType(self):
+        FreeCADGui.Selection.addSelection(self.Doc.Name, self.Box.Name, "Face1")
+        FreeCADGui.Selection.addSelection(self.Doc.Name, self.Box.Name, "Face2")
+        FreeCADGui.runCommand("Part_OffsetPlane")
+        FreeCADGui.updateGui()
+        FreeCADGui.Control.activeTaskDialog().accept()
+        plane = self.planes()[0]
+        self.assertEqual(plane.MapMode, "MidPlane")
+        self.assertAlmostEqual(plane.Placement.Base.x, 5.0)
+
+    def testPickReferencesAfterCommand(self):
+        FreeCADGui.runCommand("Part_PlaneThroughThreePoints")
+        FreeCADGui.updateGui()
+        for vertex in ("Vertex1", "Vertex3", "Vertex5"):
+            FreeCADGui.Selection.addSelection(self.Doc.Name, self.Box.Name, vertex)
+            FreeCADGui.updateGui()
+        FreeCADGui.Control.activeTaskDialog().accept()
+        plane = self.planes()[0]
+        self.assertEqual(plane.MapMode, "ThreePointsPlane")
+        self.assertEqual(len(plane.AttachmentSupport[0][1]), 3)
+
+    def testGateRejectsWrongReferences(self):
+        FreeCADGui.runCommand("Part_MidPlane")
+        FreeCADGui.updateGui()
+        FreeCADGui.Selection.addSelection(self.Doc.Name, self.Box.Name, "Edge1")
+        FreeCADGui.updateGui()
+        self.assertEqual(len(self.planes()[0].AttachmentSupport), 0)
+
+    def testCancelRemovesPlane(self):
+        FreeCADGui.Selection.addSelection(self.Doc.Name, self.Box.Name, "Face6")
+        FreeCADGui.runCommand("Part_OffsetPlane")
+        FreeCADGui.updateGui()
+        FreeCADGui.Control.activeTaskDialog().reject()
+        FreeCADGui.updateGui()
+        self.assertEqual(self.planes(), [])
+
+    def testAcceptNeedsReferences(self):
+        FreeCADGui.runCommand("Part_OffsetPlane")
+        FreeCADGui.updateGui()
+        self.assertFalse(FreeCADGui.Control.activeTaskDialog().accept())
+
+    def testPlaneGoesIntoActivePart(self):
+        part = self.Doc.addObject("App::Part", "Part")
+        FreeCADGui.ActiveDocument.ActiveView.setActiveObject("part", part)
+        FreeCADGui.Selection.addSelection(self.Doc.Name, self.Box.Name, "Face6")
+        FreeCADGui.runCommand("Part_OffsetPlane")
+        FreeCADGui.updateGui()
+        FreeCADGui.Control.activeTaskDialog().accept()
+        self.assertIn(self.planes()[0], part.Group)
+
+    def testGroupCommand(self):
+        self.assertIn("Part_ConstructionPlanes", FreeCADGui.listCommands())
+        for name in (
+            "Part_OffsetPlane",
+            "Part_PlaneAtAngle",
+            "Part_TangentPlane",
+            "Part_MidPlane",
+            "Part_PlaneThroughTwoEdges",
+            "Part_PlaneThroughThreePoints",
+            "Part_PlaneTangentAtPoint",
+            "Part_PlaneAlongPath",
+        ):
+            self.assertFalse(FreeCADGui.Command.get(name).getInfo()["pixmap"] == "")

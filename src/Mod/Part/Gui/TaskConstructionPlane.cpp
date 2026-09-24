@@ -291,6 +291,7 @@ TaskConstructionPlane::TaskConstructionPlane(
     connect(advancedButton, &QPushButton::clicked, this, &TaskConstructionPlane::advancedRequested);
 
     Gui::Selection().addSelectionGate(new ReferenceGate(planeT.getObject(), type));
+    gateInstalled = true;
     setupGizmos();
     updateValueField();
     updateReferenceList();
@@ -299,7 +300,22 @@ TaskConstructionPlane::TaskConstructionPlane(
 
 TaskConstructionPlane::~TaskConstructionPlane()
 {
-    Gui::Selection().rmvSelectionGate();
+    finishSelection();
+}
+
+void TaskConstructionPlane::finishSelection()
+{
+    if (gateInstalled) {
+        Gui::Selection().rmvSelectionGate();
+        gateInstalled = false;
+    }
+    detachSelection();
+}
+
+void TaskConstructionPlane::showIncomplete()
+{
+    statusLabel->setText(tr("Select references that make a plane."));
+    statusLabel->setStyleSheet(QStringLiteral("QLabel{color: red;}"));
 }
 
 Part::AttachExtension* TaskConstructionPlane::getAttachExtension() const
@@ -603,8 +619,11 @@ void TaskConstructionPlane::setType(Type newType)
     }
     attach->AttachmentSupport.setValues(objs, subs);
 
-    Gui::Selection().rmvSelectionGate();
+    if (gateInstalled) {
+        Gui::Selection().rmvSelectionGate();
+    }
     Gui::Selection().addSelectionGate(new ReferenceGate(planeT.getObject(), type));
+    gateInstalled = true;
 
     QSignalBlocker blocker(typeCombo);
     typeCombo->setCurrentIndex(typeCombo->findData(static_cast<int>(type)));
@@ -734,11 +753,7 @@ bool TaskDlgConstructionPlane::accept()
         return true;
     }
     if (!parameter->isAttached()) {
-        QMessageBox::warning(
-            parameter,
-            tr("Construction plane"),
-            tr("Select references that make a plane.")
-        );
+        parameter->showIncomplete();
         return false;
     }
 
@@ -787,6 +802,7 @@ bool TaskDlgConstructionPlane::accept()
     }
 
     // Keep the plane selected, so that a sketch can be started on it right away
+    parameter->finishSelection();
     Gui::Selection().clearSelection();
     Gui::Selection().addSelection(obj->getDocument()->getName(), obj->getNameInDocument());
     return true;

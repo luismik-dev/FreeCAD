@@ -61,12 +61,16 @@ void WorkbenchManipulator::addDatums(Gui::ToolBarItem* toolBar)
     if (auto view = toolBar->findItem("Structure")) {
         auto add = new Gui::ToolBarItem();  // NOLINT
         add->setCommand("Part_Datums");
+        auto planes = new Gui::ToolBarItem();  // NOLINT
+        planes->setCommand("Part_ConstructionPlanes");
         auto item = view->findItem("Std_Group");
         if (item) {
             view->insertItem(item, add);
+            view->insertItem(item, planes);
         }
         else {
             view->appendItem(add);
+            view->appendItem(planes);
         }
     }
 }

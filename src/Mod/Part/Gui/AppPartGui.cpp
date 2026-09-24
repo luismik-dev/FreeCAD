@@ -85,6 +85,7 @@
 
 // use a different name to CreateCommand()
 void CreatePartCommands();
+void CreateConstructionPlaneCommands();
 void CreateSimplePartCommands();
 void CreateParamPartCommands();
 void CreatePartSelectCommands();
@@ -238,6 +239,7 @@ PyMOD_INIT_FUNC(PartGui)
 
     // instantiating the commands
     CreatePartCommands();
+    CreateConstructionPlaneCommands();
     CreateSimplePartCommands();
     CreateParamPartCommands();
     CreatePartSelectCommands();

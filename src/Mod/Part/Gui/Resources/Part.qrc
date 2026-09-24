@@ -21,6 +21,14 @@
         <file>icons/booleans/Part_XOR.svg</file>
     </qresource>
     <qresource>
+        <file>icons/create/Part_MidPlane.svg</file>
+        <file>icons/create/Part_OffsetPlane.svg</file>
+        <file>icons/create/Part_PlaneAlongPath.svg</file>
+        <file>icons/create/Part_PlaneAtAngle.svg</file>
+        <file>icons/create/Part_PlaneTangentAtPoint.svg</file>
+        <file>icons/create/Part_PlaneThroughThreePoints.svg</file>
+        <file>icons/create/Part_PlaneThroughTwoEdges.svg</file>
+        <file>icons/create/Part_TangentPlane.svg</file>
         <file>icons/create/Part_Primitives.svg</file>
         <file>icons/create/Part_Shapebuilder.svg</file>
     </qresource>

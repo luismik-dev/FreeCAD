@@ -75,6 +75,10 @@ public:
     }
     /// Whether the references make a plane
     bool isAttached() const;
+    /// Stops picking references
+    void finishSelection();
+    /// Shows that the references do not make a plane yet
+    void showIncomplete();
 
 Q_SIGNALS:
     void advancedRequested();
@@ -120,6 +124,7 @@ private:
     Gui::LinearGizmo* distanceGizmo {nullptr};
     Gui::RadialGizmo* angleGizmo {nullptr};
     std::unique_ptr<Gui::GizmoContainer> gizmoContainer;
+    bool gateInstalled {false};
 };
 
 /// Task dialog editing a construction plane

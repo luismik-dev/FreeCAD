@@ -781,6 +781,104 @@ class Timeline(unittest.TestCase):
         self.assertTrue(self.list.isHidden())
 
 
+class ConstructionPlanes(unittest.TestCase):
+    """Construction planes in the Design workbench"""
+
+    def setUp(self):
+        import TestSketcherApp
+
+        FreeCADGui.activateWorkbench("DesignWorkbench")
+        self.Doc = App.newDocument("ConstructionPlanes")
+        self.Body = self.Doc.addObject("PartDesign::Body", "Body")
+        self.Sketch = self.Body.newObject("Sketcher::SketchObject", "Sketch")
+        TestSketcherApp.CreateRectangleSketch(self.Sketch, (0, 0), (10, 10))
+        self.Pad = self.Body.newObject("PartDesign::Pad", "Pad")
+        self.Pad.Profile = self.Sketch
+        self.Pad.Length = 5
+        self.Doc.recompute()
+        FreeCADGui.activateView("Gui::View3DInventor", True)
+        FreeCADGui.activeView().setActiveObject("pdbody", self.Body)
+        FreeCADGui.Selection.clearSelection()
+        self.processEvents()
+
+    def tearDown(self):
+        FreeCADGui.Control.closeDialog()
+        FreeCADGui.getDocument(self.Doc.Name).resetEdit()
+        App.closeDocument(self.Doc.Name)
+
+    @staticmethod
+    def processEvents():
+        for _ in range(5):
+            QApplication.processEvents()
+
+    def makeOffsetPlane(self, face="Face6", distance=10.0):
+        FreeCADGui.Selection.addSelection(self.Doc.Name, self.Body.Name, "Pad." + face)
+        FreeCADGui.runCommand("Part_OffsetPlane")
+        self.processEvents()
+        edit = FreeCADGui.getMainWindow().findChild(QtGui.QAbstractSpinBox, "valueEdit")
+        edit.setProperty("rawValue", distance)
+        FreeCADGui.Control.activeTaskDialog().accept()
+        self.processEvents()
+        return self.Doc.findObjects("Part::DatumPlane")[0]
+
+    def testMenuAndToolbar(self):
+        menus = [
+            menu
+            for menu in FreeCADGui.getMainWindow().menuBar().findChildren(QtGui.QMenu)
+            if menu.title() == "&Construct"
+        ]
+        self.assertEqual(len(menus), 1)
+        texts = [action.text() for action in menus[0].actions()]
+        self.assertIn("Offset Plane", texts)
+        self.assertIn("Midplane", texts)
+        toolbar = FreeCADGui.getMainWindow().findChild(QtGui.QToolBar, "Design")
+        names = [action.objectName() for action in toolbar.actions()]
+        self.assertIn("Part_ConstructionPlanes", names)
+
+    def testPlaneInBodyAndTimeline(self):
+        plane = self.makeOffsetPlane()
+        self.assertIn(plane, self.Body.Group)
+        self.assertAlmostEqual(plane.Placement.Base.z, 15.0)
+        dock = FreeCADGui.getMainWindow().findChild(QtGui.QDockWidget, "PartDesign_Timeline")
+        timeline = dock.widget().findChild(QtGui.QListWidget)
+        names = [timeline.item(i).data(QtCore.Qt.UserRole) for i in range(timeline.count())]
+        self.assertIn(plane.Name, names)
+
+    def testSketchOnSelectedPlane(self):
+        plane = self.makeOffsetPlane()
+        FreeCADGui.runCommand("PartDesign_NewSketch")
+        self.processEvents()
+        sketches = self.Doc.findObjects("Sketcher::SketchObject")
+        self.assertEqual(len(sketches), 2)
+        self.assertEqual(sketches[-1].AttachmentSupport[0][0], plane)
+
+    def testPickPlaneForNewSketch(self):
+        plane = self.makeOffsetPlane()
+        FreeCADGui.Selection.clearSelection()
+        FreeCADGui.runCommand("PartDesign_NewSketch")
+        self.processEvents()
+        FreeCADGui.Selection.addSelection(self.Doc.Name, self.Body.Name, plane.Name + ".")
+        self.processEvents()
+        dialog = FreeCADGui.Control.activeTaskDialog()
+        if dialog:
+            dialog.accept()
+            self.processEvents()
+        sketches = self.Doc.findObjects("Sketcher::SketchObject")
+        self.assertEqual(len(sketches), 2)
+        self.assertEqual(sketches[-1].AttachmentSupport[0][0], plane)
+
+    def testDoubleClickEditsPlane(self):
+        plane = self.makeOffsetPlane()
+        plane.ViewObject.doubleClicked()
+        self.processEvents()
+        combo = FreeCADGui.getMainWindow().findChild(QtGui.QComboBox, "typeCombo")
+        self.assertIsNotNone(combo)
+        edit = FreeCADGui.getMainWindow().findChild(QtGui.QAbstractSpinBox, "valueEdit")
+        edit.setProperty("rawValue", 20.0)
+        FreeCADGui.Control.activeTaskDialog().accept()
+        self.assertAlmostEqual(plane.Placement.Base.z, 25.0)
+
+
 class PadOperation(unittest.TestCase):
     """The operation of the Pad/Pocket task panel changes the feature type or the body"""
 

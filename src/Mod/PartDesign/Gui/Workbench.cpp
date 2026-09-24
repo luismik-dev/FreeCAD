@@ -153,8 +153,14 @@ void Workbench::activated()
 
     std::vector<Gui::TaskView::TaskWatcher*> Watcher;
 
-    const char* Vertex[]
-        = {"Part_DatumPoint", "Part_DatumLine", "Part_DatumPlane", "Part_CoordinateSystem", nullptr};
+    const char* Vertex[] = {
+        "Part_DatumPoint",
+        "Part_DatumLine",
+        "Part_DatumPlane",
+        "Part_PlaneThroughThreePoints",
+        "Part_CoordinateSystem",
+        nullptr
+    };
     Watcher.push_back(new Gui::TaskView::TaskWatcherCommands(
         "SELECT Part::Feature SUBELEMENT Vertex COUNT 1..",
         Vertex,
@@ -168,6 +174,8 @@ void Workbench::activated()
         "Part_DatumPoint",
         "Part_DatumLine",
         "Part_DatumPlane",
+        "Part_PlaneAtAngle",
+        "Part_PlaneAlongPath",
         "Part_CoordinateSystem",
         nullptr
     };
@@ -188,6 +196,8 @@ void Workbench::activated()
         "Part_DatumPoint",
         "Part_DatumLine",
         "Part_DatumPlane",
+        "Part_OffsetPlane",
+        "Part_TangentPlane",
         "Part_CoordinateSystem",
         nullptr
     };
@@ -219,6 +229,7 @@ void Workbench::activated()
         "Part_DatumPoint",
         "Part_DatumLine",
         "Part_DatumPlane",
+        "Part_OffsetPlane",
         "Part_CoordinateSystem",
         nullptr
     };
@@ -272,6 +283,7 @@ void Workbench::activated()
         "PartDesign_Draft",
         "PartDesign_Thickness",
         "PartDesign_Defeaturing",
+        "Part_MidPlane",
         nullptr
     };
     Watcher.push_back(new Gui::TaskView::TaskWatcherCommands(

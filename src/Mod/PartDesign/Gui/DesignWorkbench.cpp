@@ -43,6 +43,7 @@ using namespace PartDesignGui;
 #if 0  // needed for Qt's lupdate utility
     qApp->translate("Workbench", "Design");
     qApp->translate("Workbench", "&Assembly");
+    qApp->translate("Workbench", "&Construct");
     qApp->translate("Workbench", "Assembly Joints");
 #endif
 
@@ -224,6 +225,22 @@ Gui::MenuItem* DesignWorkbench::setupMenuBar() const
               << "Assembly_SelectJointsOfComponent"
               << "Assembly_ExportASMT";
 
+    Gui::MenuItem* construct = new Gui::MenuItem;
+    root->insertItem(windows, construct);
+    construct->setCommand("&Construct");
+    *construct << "Part_OffsetPlane"
+               << "Part_PlaneAtAngle"
+               << "Part_TangentPlane"
+               << "Part_MidPlane"
+               << "Part_PlaneThroughTwoEdges"
+               << "Part_PlaneThroughThreePoints"
+               << "Part_PlaneTangentAtPoint"
+               << "Part_PlaneAlongPath"
+               << "Separator"
+               << "Part_DatumLine"
+               << "Part_DatumPoint"
+               << "Part_CoordinateSystem";
+
     return root;
 }
 
@@ -248,6 +265,7 @@ Gui::ToolBarItem* DesignWorkbench::setupToolBars() const
             << "PartDesign_Body"
             << "Separator"
             << "PartDesign_NewSketch"
+            << "Part_ConstructionPlanes"
             << "Separator"
             << "Assembly_SolveAssembly"
             << "Assembly_CreateBom";

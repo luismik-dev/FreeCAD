@@ -1243,18 +1243,30 @@ void finishProfileBased(const Gui::Command* cmd, const Part::Feature* sketch, Ap
     finishFeature(cmd, Feat);
 }
 
+static bool isSketchInEdit()
+{
+    Gui::Document* doc = Gui::Application::Instance->activeDocument();
+    auto vp = doc ? dynamic_cast<Gui::ViewProviderDocumentObject*>(doc->getInEdit()) : nullptr;
+    return vp && vp->getObject()->isDerivedFrom<Sketcher::SketchObject>();
+}
+
 // Leaves the edit mode of a sketch, like other CAD programs do when extruding while sketching
 static void finishSketchInEdit()
 {
-    Gui::Document* doc = Gui::Application::Instance->activeDocument();
-    if (!doc) {
-        return;
-    }
-    auto vp = dynamic_cast<Gui::ViewProviderDocumentObject*>(doc->getInEdit());
-    if (vp && vp->getObject()->isDerivedFrom<Sketcher::SketchObject>()) {
-        doc->resetEdit();
+    if (isSketchInEdit()) {
+        Gui::Application::Instance->activeDocument()->resetEdit();
         Gui::Selection().clearSelection();
     }
+}
+
+// Pad and Pocket are available while sketching, they finish the sketch. Other edit modes
+// block them like any command altering the document.
+static bool isExtrudeActive(bool hasActiveDocument)
+{
+    if (!hasActiveDocument) {
+        return false;
+    }
+    return isSketchInEdit() || Gui::Control().isAllowedAlterDocument();
 }
 
 void prepareProfileBased(Gui::Command* cmd, const std::string& which, double length)
@@ -1319,6 +1331,8 @@ CmdPartDesignPad::CmdPartDesignPad()
     sWhatsThis = "PartDesign_Pad";
     sStatusTip = sToolTipText;
     sPixmap = "PartDesign_Pad";
+    // Enabled while sketching, see isActive()
+    eType = eType | ForEdit;
 }
 
 void CmdPartDesignPad::activated(int iMsg)
@@ -1330,7 +1344,7 @@ void CmdPartDesignPad::activated(int iMsg)
 
 bool CmdPartDesignPad::isActive()
 {
-    return hasActiveDocument();
+    return isExtrudeActive(hasActiveDocument());
 }
 
 //===========================================================================
@@ -1348,6 +1362,8 @@ CmdPartDesignPocket::CmdPartDesignPocket()
     sWhatsThis = "PartDesign_Pocket";
     sStatusTip = sToolTipText;
     sPixmap = "PartDesign_Pocket";
+    // Enabled while sketching, see isActive()
+    eType = eType | ForEdit;
 }
 
 void CmdPartDesignPocket::activated(int iMsg)
@@ -1359,7 +1375,7 @@ void CmdPartDesignPocket::activated(int iMsg)
 
 bool CmdPartDesignPocket::isActive()
 {
-    return hasActiveDocument();
+    return isExtrudeActive(hasActiveDocument());
 }
 
 //===========================================================================

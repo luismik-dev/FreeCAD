@@ -1,0 +1,9 @@
+# The Fusion 360 shortcuts replace all customized shortcuts, so that no earlier
+# assignment clashes with them. "Reset all" in the keyboard customization dialog
+# restores the FreeCAD default shortcuts.
+import FreeCAD
+
+shortcuts = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Shortcut")
+shortcuts.GetGroup("Priorities").Clear()
+for name in shortcuts.GetStrings():
+    shortcuts.RemString(name)

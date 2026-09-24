@@ -35,5 +35,14 @@
       <tag>background</tag>
       <tag>dark</tag>
     </preferencepack>
+    <preferencepack>
+      <name>Fusion 360</name>
+      <type>Shortcuts</type>
+      <description>Keyboard shortcuts like in Autodesk Fusion 360: E extrude, L line, R rectangle, C circle, A arc, D dimension, X construction, P project, T trim, O offset, F fillet, H hole, J joint and S command search. Replaces customized shortcuts; the sketcher constraints previously on these keys move to Shift plus the same key.</description>
+      <version>1.0.0</version>
+      <tag>built-in</tag>
+      <tag>shortcuts</tag>
+      <tag>keyboard</tag>
+    </preferencepack>
   </content>
 </package>

@@ -497,6 +497,74 @@ class CommandSearch(unittest.TestCase):
         self.assertEqual(len(self.Doc.findObjects("PartDesign::Body")), 1)
 
 
+class FusionShortcuts(unittest.TestCase):
+    """The Fusion 360 preference pack and extruding while sketching"""
+
+    def setUp(self):
+        FreeCADGui.activateWorkbench("DesignWorkbench")
+        self.Doc = App.newDocument("FusionShortcuts")
+
+    def tearDown(self):
+        FreeCADGui.Control.closeDialog()
+        FreeCADGui.ActiveDocument.resetEdit()
+        App.closeDocument(self.Doc.Name)
+
+    @staticmethod
+    def processEvents(ms=600):
+        import time
+
+        end = time.time() + ms / 1000.0
+        while time.time() < end:
+            QApplication.processEvents()
+
+    def testPackCommandsExist(self):
+        import xml.etree.ElementTree as ET
+
+        path = App.getResourceDir() + "Gui/PreferencePacks/Fusion 360/Fusion 360.cfg"
+        root = ET.parse(path).getroot()
+        names = {
+            node.get("Name")
+            for group in root.iter("FCParamGroup")
+            if group.get("Name") in ("Shortcut", "Priorities")
+            for node in group
+            if node.tag in ("FCText", "FCInt")
+        }
+        commands = set(FreeCADGui.listCommands())
+        missing = sorted(name for name in names if name not in commands)
+        self.assertEqual(missing, [], "Unknown commands in the Fusion 360 shortcuts")
+
+    def testExtrudeKeyWhileSketching(self):
+        try:
+            from PySide6.QtTest import QTest
+        except ImportError:
+            self.skipTest("QtTest is not available")
+        import TestSketcherApp
+
+        body = self.Doc.addObject("PartDesign::Body", "Body")
+        sketch = body.newObject("Sketcher::SketchObject", "Sketch")
+        TestSketcherApp.CreateRectangleSketch(sketch, (0, 0), (10, 10))
+        self.Doc.recompute()
+        FreeCADGui.activateView("Gui::View3DInventor", True)
+        FreeCADGui.activeView().setActiveObject("pdbody", body)
+
+        pad = FreeCADGui.Command.get("PartDesign_Pad")
+        oldShortcut = pad.getShortcut()
+        pad.setShortcut("E")
+        try:
+            FreeCADGui.ActiveDocument.setEdit(sketch)
+            self.processEvents()
+            QTest.keyClick(QApplication.focusWidget(), QtCore.Qt.Key_E)
+            self.processEvents()
+        finally:
+            pad.resetShortcut()
+            if oldShortcut != pad.getShortcut():
+                pad.setShortcut(oldShortcut)
+
+        pads = self.Doc.findObjects("PartDesign::Pad")
+        self.assertEqual(len(pads), 1)
+        self.assertEqual(FreeCADGui.ActiveDocument.getInEdit().Object, pads[0])
+
+
 class ExtrudeWithoutProfile(unittest.TestCase):
     """Pad without selection starts with no profile, which is picked in the task panel"""
 

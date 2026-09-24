@@ -563,6 +563,8 @@ SET(Part_SRCS
     STEP/ImportExportSettings.cpp
     STEP/ImportExportSettings.h
     Attacher.cpp
+    ConstructionPlane.cpp
+    ConstructionPlane.h
     Attacher.h
     AppPart.cpp
     AppPartPy.cpp

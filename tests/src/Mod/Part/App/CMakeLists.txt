@@ -2,6 +2,7 @@
 
 add_executable(Part_tests_run
         Attacher.cpp
+        ConstructionPlane.cpp
         AttachExtension.cpp
         BRepMesh.cpp
         FaceMakerBullseye.cpp

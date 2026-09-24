@@ -30,6 +30,7 @@
 #include <Gui/View3DInventor.h>
 #include <Gui/View3DInventorViewer.h>
 
+#include "TaskConstructionPlane.h"
 #include "ViewProviderDatum.h"
 
 
@@ -57,8 +58,33 @@ ViewProviderPlane::ViewProviderPlane()
 
 bool ViewProviderPlane::doubleClicked()
 {
-    showAttachmentEditor();
+    if (canEditAsConstructionPlane(getObject())) {
+        editConstructionPlane(getObject());
+    }
+    else {
+        showAttachmentEditor();
+    }
     return true;
+}
+
+bool ViewProviderPlane::setEdit(int ModNum)
+{
+    // New construction planes and planes made by one are edited in the construction plane panel
+    auto type = takePendingConstructionPlaneType();
+    if (ModNum == ViewProvider::Default && (type || canEditAsConstructionPlane(getObject()))) {
+        Gui::Control().showDialog(new TaskDlgConstructionPlane(this, type));
+        return true;
+    }
+    return Gui::ViewProviderPlane::setEdit(ModNum);
+}
+
+void ViewProviderPlane::unsetEdit(int ModNum)
+{
+    if (ModNum == ViewProvider::Default) {
+        Gui::Control().closeDialog();
+        return;
+    }
+    Gui::ViewProviderPlane::unsetEdit(ModNum);
 }
 
 

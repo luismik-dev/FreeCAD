@@ -22,6 +22,7 @@
 #   USA                                                                   *
 # **************************************************************************
 
+import math
 import os
 import sys
 import unittest
@@ -199,3 +200,93 @@ class SectionCutTestCases(unittest.TestCase):
 
     def tearDown(self):
         FreeCAD.closeDocument("SectionCut")
+
+
+class ConstructionPlaneTestCases(unittest.TestCase):
+    """The construction plane task panel of datum planes"""
+
+    def setUp(self):
+        self.Doc = FreeCAD.newDocument("ConstructionPlane")
+        self.Box = self.Doc.addObject("Part::Box", "Box")
+        self.Doc.recompute()
+        self.Plane = self.Doc.addObject("Part::DatumPlane", "Plane")
+        self.Plane.AttachmentSupport = [(self.Box, "Face6")]
+        self.Plane.MapMode = "FlatFace"
+        self.Doc.recompute()
+
+    def tearDown(self):
+        FreeCADGui.Control.closeDialog()
+        FreeCADGui.getDocument(self.Doc.Name).resetEdit()
+        FreeCAD.closeDocument(self.Doc.Name)
+
+    @staticmethod
+    def findWidget(cls, name):
+        return FreeCADGui.getMainWindow().findChild(cls, name)
+
+    def edit(self):
+        FreeCADGui.getDocument(self.Doc.Name).setEdit(self.Plane.Name)
+        FreeCADGui.updateGui()
+
+    def testOffsetValue(self):
+        self.edit()
+        combo = self.findWidget(QtWidgets.QComboBox, "typeCombo")
+        self.assertIsNotNone(combo)
+        self.assertEqual(combo.currentText(), "Offset plane")
+        self.findWidget(QtWidgets.QAbstractSpinBox, "valueEdit").setProperty("rawValue", 5.0)
+        FreeCADGui.Control.activeTaskDialog().accept()
+        self.assertAlmostEqual(self.Plane.AttachmentOffset.Base.z, 5.0)
+        self.assertAlmostEqual(self.Plane.Placement.Base.z, 15.0)
+        self.assertIsNone(FreeCADGui.getDocument(self.Doc.Name).getInEdit())
+
+    def testRejectRestores(self):
+        self.edit()
+        self.findWidget(QtWidgets.QAbstractSpinBox, "valueEdit").setProperty("rawValue", 5.0)
+        FreeCADGui.Control.activeTaskDialog().reject()
+        self.assertAlmostEqual(self.Plane.AttachmentOffset.Base.z, 0.0)
+        self.assertAlmostEqual(self.Plane.Placement.Base.z, 10.0)
+
+    def testPickReferences(self):
+        self.edit()
+        # A picked face replaces the face of an offset plane
+        FreeCADGui.Selection.addSelection(self.Doc.Name, self.Box.Name, "Face1")
+        FreeCADGui.updateGui()
+        self.assertEqual(self.Plane.AttachmentSupport, [(self.Box, ("Face1",))])
+        # A midplane takes a second face
+        combo = self.findWidget(QtWidgets.QComboBox, "typeCombo")
+        combo.setCurrentIndex(combo.findText("Midplane"))
+        FreeCADGui.Selection.addSelection(self.Doc.Name, self.Box.Name, "Face2")
+        FreeCADGui.updateGui()
+        FreeCADGui.Control.activeTaskDialog().accept()
+        self.assertEqual(self.Plane.MapMode, "MidPlane")
+        self.assertAlmostEqual(self.Plane.Placement.Base.x, 5.0)
+
+    def testPickedReferenceToggles(self):
+        self.edit()
+        combo = self.findWidget(QtWidgets.QComboBox, "typeCombo")
+        combo.setCurrentIndex(combo.findText("Midplane"))
+        FreeCADGui.Selection.addSelection(self.Doc.Name, self.Box.Name, "Face6")
+        FreeCADGui.updateGui()
+        self.assertEqual(len(self.Plane.AttachmentSupport), 0)
+        self.assertEqual(self.Plane.MapMode, "Deactivated")
+
+    def testPlaneAtAngle(self):
+        self.Plane.AttachmentSupport = [(self.Box, "Edge1")]
+        self.Plane.MapMode = "PlaneThroughLine"
+        self.Doc.recompute()
+        self.edit()
+        combo = self.findWidget(QtWidgets.QComboBox, "typeCombo")
+        self.assertEqual(combo.currentText(), "Plane at angle")
+        self.findWidget(QtWidgets.QAbstractSpinBox, "valueEdit").setProperty("rawValue", 30.0)
+        FreeCADGui.Control.activeTaskDialog().accept()
+        rotation = self.Plane.AttachmentOffset.Rotation
+        self.assertAlmostEqual(math.degrees(rotation.Angle), 30.0)
+        self.assertTrue(rotation.Axis.isEqual(FreeCAD.Vector(1, 0, 0), 1e-7))
+
+    def testOtherModesUseAttachmentEditor(self):
+        self.Plane.MapMode = "ObjectXZ"
+        self.Plane.AttachmentSupport = [(self.Box, "")]
+        self.Doc.recompute()
+        self.Plane.ViewObject.doubleClicked()
+        FreeCADGui.updateGui()
+        self.assertIsNotNone(FreeCADGui.Control.activeTaskDialog())
+        self.assertIsNone(self.findWidget(QtWidgets.QComboBox, "typeCombo"))

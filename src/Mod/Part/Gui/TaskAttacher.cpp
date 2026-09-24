@@ -459,6 +459,15 @@ QLineEdit* TaskAttacher::getLine(unsigned idx)
 
 void TaskAttacher::findCorrectObjAndSubInThisContext(App::DocumentObject*& rootObj, std::string& sub)
 {
+    findCorrectObjAndSubInThisContext(ViewProvider->getObject(), rootObj, sub);
+}
+
+void TaskAttacher::findCorrectObjAndSubInThisContext(
+    App::DocumentObject* attachingObj,
+    App::DocumentObject*& rootObj,
+    std::string& sub
+)
+{
     // The reference that we store must take into account the hierarchy of geoFeatures. For example:
     // - Part
     // - - Cube
@@ -491,7 +500,6 @@ void TaskAttacher::findCorrectObjAndSubInThisContext(App::DocumentObject*& rootO
     names.insert(names.begin(), rootObj->getNameInDocument());
 
     App::Document* doc = rootObj->getDocument();
-    App::DocumentObject* attachingObj = ViewProvider->getObject();     // Attaching object
     App::DocumentObject* subObj = rootObj->getSubObject(sub.c_str());  // Object being attached.
     if (!subObj || subObj == rootObj) {
         // Case of root object. We don't need to modify it.

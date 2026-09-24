@@ -60,6 +60,8 @@ public:
     ~ViewProviderPlane() override = default;
 
     bool doubleClicked() override;
+    bool setEdit(int ModNum) override;
+    void unsetEdit(int ModNum) override;
 };
 
 class PartGuiExport ViewProviderPoint: public Gui::ViewProviderPoint,

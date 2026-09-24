@@ -146,6 +146,17 @@ private:
     void updateAttachmentOffsetUI();
 
     void findCorrectObjAndSubInThisContext(App::DocumentObject*& obj, std::string& sub);
+
+public:
+    /// Expresses a reference selected in the 3D view relative to the container of the
+    /// attaching object. Sets obj to null if it cannot be referenced.
+    static void findCorrectObjAndSubInThisContext(
+        App::DocumentObject* attachingObj,
+        App::DocumentObject*& obj,
+        std::string& sub
+    );
+
+private:
     void handleInitialSelection();
     struct SubAndObjName
     {

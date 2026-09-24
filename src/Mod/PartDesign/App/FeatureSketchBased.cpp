@@ -27,6 +27,7 @@
 #include <numbers>
 #include <optional>
 #include <ranges>
+#include <set>
 #include <Bnd_Box.hxx>
 #include <BRep_Builder.hxx>
 #include <BRep_Tool.hxx>
@@ -61,6 +62,7 @@
 
 
 #include <App/Document.h>
+#include <App/ElementNamingUtils.h>
 #include <App/Datums.h>
 #include <Base/Converter.h>
 #include <Base/Reader.h>
@@ -1125,6 +1127,61 @@ double ProfileBased::getThroughAllLength() const
     // co-planar issues, gives a length that is guaranteed to go through all.
     // The result is multiplied by 2 for the guarantee to work also for the midplane option.
     return 2.02 * sqrt(box.SquareExtent());
+}
+
+bool ProfileBased::isProfileFullyConsumed(
+    const App::DocumentObject* profile,
+    const App::DocumentObject* ignore
+)
+{
+    if (!profile) {
+        return true;
+    }
+
+    // Only sketches expose their closed regions as 'InternalFace' sub-elements
+    auto internalShape = dynamic_cast<Part::PropertyPartShape*>(
+        profile->getPropertyByName("InternalShape")
+    );
+    if (!internalShape) {
+        return true;
+    }
+    TopTools_IndexedMapOfShape regions;
+    TopExp::MapShapes(internalShape->getValue(), TopAbs_FACE, regions);
+    if (regions.IsEmpty()) {
+        return true;
+    }
+
+    static const std::string internalFace("InternalFace");
+    std::set<int> usedRegions;
+    for (auto obj : profile->getInList()) {
+        auto feature = freecad_cast<ProfileBased*>(obj);
+        if (!feature || feature == ignore || feature->Profile.getValue() != profile) {
+            continue;
+        }
+        const auto subs = feature->Profile.getSubValues(false);
+        if (subs.empty()) {
+            return true;
+        }
+        for (const auto& sub : subs) {
+            std::string element = Data::findElementName(sub.c_str());
+            if (!element.starts_with(internalFace)) {
+                return true;
+            }
+            try {
+                usedRegions.insert(std::stoi(element.substr(internalFace.size())));
+            }
+            catch (const std::exception&) {
+                return true;
+            }
+        }
+    }
+
+    for (int i = 1; i <= regions.Extent(); ++i) {
+        if (!usedRegions.contains(i)) {
+            return false;
+        }
+    }
+    return true;
 }
 
 bool ProfileBased::checkWireInsideFace(const TopoDS_Wire& wire, const TopoDS_Face& face, const gp_Dir& dir)

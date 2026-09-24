@@ -353,7 +353,9 @@ bool TaskDlgSketchBasedParameters::accept()
     // it will remain hidden if the feature's recompute fails
     if (TaskDlgFeatureParameters::accept()) {
         App::DocumentObject* sketch = feature->Profile.getValue();
-        Gui::cmdAppObjectHide(sketch);
+        if (PartDesign::ProfileBased::isProfileFullyConsumed(sketch)) {
+            Gui::cmdAppObjectHide(sketch);
+        }
         return true;
     }
 

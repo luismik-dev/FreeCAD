@@ -146,6 +146,33 @@ class TestPad(unittest.TestCase):
         self.assertAlmostEqual(self.Pad.Shape.BoundBox.ZMin, 12.0)
         self.assertAlmostEqual(self.Pad.Shape.BoundBox.ZMax, 15.0)
 
+    def testPadSketchRegionsSeparately(self):
+        # A square inside a square gives two closed regions: the inner square and the ring
+        self.Body = self.Doc.addObject("PartDesign::Body", "Body")
+        self.PadSketch = self.Doc.addObject("Sketcher::SketchObject", "SketchPad")
+        self.PadSketch.MakeInternals = True
+        self.Body.addObject(self.PadSketch)
+        TestSketcherApp.CreateRectangleSketch(self.PadSketch, (0, 0), (20, 20))
+        TestSketcherApp.CreateRectangleSketch(self.PadSketch, (5, 5), (10, 10))
+        self.Doc.recompute()
+        self.assertEqual(len(self.PadSketch.InternalShape.Faces), 2)
+
+        self.Pad = self.Doc.addObject("PartDesign::Pad", "Pad")
+        self.Pad.Profile = (self.PadSketch, ["InternalFace1"])
+        self.Pad.Length = 10
+        self.Body.addObject(self.Pad)
+        self.Doc.recompute()
+        self.assertTrue(self.Pad.Shape.isValid())
+        self.assertIn(round(self.Pad.Shape.Volume), (1000, 3000))
+
+        self.Pad2 = self.Doc.addObject("PartDesign::Pad", "Pad2")
+        self.Pad2.Profile = (self.PadSketch, ["InternalFace2"])
+        self.Pad2.Length = 10
+        self.Body.addObject(self.Pad2)
+        self.Doc.recompute()
+        self.assertTrue(self.Pad2.Shape.isValid())
+        self.assertAlmostEqual(self.Pad2.Shape.Volume, 4000)
+
     def testStartOffsetForTwoSidedAndSymmetricPad(self):
         self.PadSketch = self.Doc.addObject("Sketcher::SketchObject", "SketchPad")
         TestSketcherApp.CreateRectangleSketch(self.PadSketch, (0, 0), (1, 1))

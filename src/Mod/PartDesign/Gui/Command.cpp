@@ -52,6 +52,7 @@
 #include <Mod/PartDesign/App/FeatureGroove.h>
 #include <Mod/PartDesign/App/FeatureMultiTransform.h>
 #include <Mod/PartDesign/App/FeatureRevolution.h>
+#include <Mod/PartDesign/App/FeatureSketchBased.h>
 #include <Mod/PartDesign/App/FeatureTransformed.h>
 #include <Mod/PartDesign/App/DatumLine.h>
 #include <Mod/PartDesign/App/DatumPlane.h>
@@ -754,7 +755,8 @@ unsigned validateSketches(
                 ++o;
             }
         }
-        if (!inList.empty()) {
+        // A sketch of which only some closed regions are used is still available
+        if (!inList.empty() && PartDesign::ProfileBased::isProfileFullyConsumed(*s)) {
             status.push_back(PartDesignGui::TaskFeaturePick::isUsed);
             continue;
         }
@@ -1231,7 +1233,10 @@ void prepareProfileBased(
 
 void finishProfileBased(const Gui::Command* cmd, const Part::Feature* sketch, App::DocumentObject* Feat)
 {
-    if (sketch && sketch->isDerivedFrom<Part::Part2DObject>()) {
+    // Keep the sketch visible while some of its closed regions are still unused, so that
+    // they can be selected for further features
+    if (sketch && sketch->isDerivedFrom<Part::Part2DObject>()
+        && PartDesign::ProfileBased::isProfileFullyConsumed(sketch)) {
         FCMD_OBJ_HIDE(sketch);
     }
     finishFeature(cmd, Feat);

@@ -161,6 +161,19 @@ public:
     // calculate the through all length
     double getThroughAllLength() const;
 
+    /**
+     * Checks whether all closed regions of a profile are used by profile based features
+     * @param profile: the profile object, typically a sketch
+     * @param ignore: a feature that is not taken into account, e.g. one about to be deleted
+     * @return false only if the profile exposes internal faces (closed regions) and at least
+     *         one of them is not referenced by any feature. A feature that references the whole
+     *         profile or anything but internal faces consumes the profile completely.
+     */
+    static bool isProfileFullyConsumed(
+        const App::DocumentObject* profile,
+        const App::DocumentObject* ignore = nullptr
+    );
+
     static const char* StartTypesEnums[];
 
 protected:

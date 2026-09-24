@@ -396,6 +396,71 @@ class QuickSketchStart(unittest.TestCase):
         self.assertNotIn(sketch, body1.Group)
 
 
+class PadProfileRegions(unittest.TestCase):
+    """Regions of the sketch can be added to and removed from the profile in the task panel"""
+
+    def setUp(self):
+        import TestSketcherApp
+
+        self.Doc = App.newDocument("PadProfileRegions")
+        self.Body = self.Doc.addObject("PartDesign::Body", "Body")
+        self.Sketch = self.Body.newObject("Sketcher::SketchObject", "Sketch")
+        self.Sketch.MakeInternals = True
+        # A square inside a square gives two closed regions
+        TestSketcherApp.CreateRectangleSketch(self.Sketch, (0, 0), (20, 20))
+        TestSketcherApp.CreateRectangleSketch(self.Sketch, (5, 5), (10, 10))
+        self.Pad = self.Body.newObject("PartDesign::Pad", "Pad")
+        self.Pad.Profile = (self.Sketch, ["InternalFace1"])
+        self.Pad.Length = 10
+        self.Doc.recompute()
+        FreeCADGui.activateView("Gui::View3DInventor", True)
+
+    def tearDown(self):
+        FreeCADGui.Control.closeDialog()
+        FreeCADGui.ActiveDocument.resetEdit()
+        App.closeDocument(self.Doc.Name)
+
+    def clickRegion(self, region):
+        FreeCADGui.Selection.addSelection(
+            self.Doc.Name, self.Body.Name, "{}.{}".format(self.Sketch.Name, region)
+        )
+        QApplication.processEvents()
+
+    def testToggleRegions(self):
+        FreeCADGui.ActiveDocument.setEdit(self.Pad)
+        mainWindow = FreeCADGui.getMainWindow()
+        button = mainWindow.findChild(QtGui.QToolButton, "buttonProfileRegions")
+        regionList = mainWindow.findChild(QtGui.QListWidget, "listWidgetProfileRegions")
+        group = mainWindow.findChild(QtGui.QGroupBox, "groupProfiles")
+        self.assertIsNotNone(button)
+        self.assertFalse(group.isHidden())
+        self.assertEqual(regionList.count(), 1)
+
+        padVisible = self.Pad.Visibility
+        sketchVisible = self.Sketch.Visibility
+        button.setChecked(True)
+        self.assertTrue(self.Sketch.Visibility)
+
+        self.clickRegion("InternalFace2")
+        self.assertEqual(list(self.Pad.Profile[1]), ["InternalFace1", "InternalFace2"])
+        self.assertEqual(regionList.count(), 2)
+        self.assertAlmostEqual(self.Pad.Shape.Volume, 4000)
+
+        # clicking a region again removes it
+        self.clickRegion("InternalFace1")
+        self.assertEqual(list(self.Pad.Profile[1]), ["InternalFace2"])
+        self.assertEqual(regionList.count(), 1)
+
+        # edges of the sketch are not accepted
+        self.clickRegion("Edge1")
+        self.assertEqual(list(self.Pad.Profile[1]), ["InternalFace2"])
+
+        # leaving the selection restores the visibility
+        button.setChecked(False)
+        self.assertEqual(self.Pad.Visibility, padVisible)
+        self.assertEqual(self.Sketch.Visibility, sketchVisible)
+
+
 # class PartDesignGuiTestCases(unittest.TestCase):
 #   def setUp(self):
 #       self.Doc = FreeCAD.newDocument("SketchGuiTest")

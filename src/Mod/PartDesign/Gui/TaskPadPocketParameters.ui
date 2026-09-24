@@ -15,6 +15,41 @@
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <item>
+    <widget class="QGroupBox" name="groupProfiles">
+     <property name="title">
+      <string>Profiles</string>
+     </property>
+     <layout class="QVBoxLayout" name="verticalLayoutProfiles">
+      <item>
+       <widget class="QToolButton" name="buttonProfileRegions">
+        <property name="toolTip">
+         <string>Click closed regions of the sketch to add them to or remove them from the profile</string>
+        </property>
+        <property name="text">
+         <string>Select Regions</string>
+        </property>
+        <property name="checkable">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QListWidget" name="listWidgetProfileRegions">
+        <property name="maximumSize">
+         <size>
+          <width>16777215</width>
+          <height>80</height>
+         </size>
+        </property>
+        <property name="selectionMode">
+         <enum>QAbstractItemView::ExtendedSelection</enum>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
     <layout class="QGridLayout" name="gridLayout">
      <item row="0" column="0">
       <widget class="QLabel" name="labelStart">

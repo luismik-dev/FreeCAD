@@ -47,6 +47,7 @@ class PropertyLinkSubList;
 namespace Gui
 {
 class PrefQuantitySpinBox;
+class ViewProvider;
 }
 
 namespace Gui
@@ -121,7 +122,8 @@ public:
         SelectStartReference,
         SelectShape,
         SelectShapeFaces,
-        SelectReferenceAxis
+        SelectReferenceAxis,
+        SelectProfileRegions
     };
 
     TaskExtrudeParameters(
@@ -213,6 +215,8 @@ private:
     void onSelectShapeToggle(bool checked, Side side);
     void onSelectShapeFacesToggle(bool checked, Side side);
     void onUnselectShapeFacesTrigger(Side side);
+    void onSelectProfileRegionsToggle(bool checked);
+    void onRemoveProfileRegions();
 
 protected:
     void updateWholeUI(Type type, Side side);
@@ -259,6 +263,15 @@ private:
     void selectedStartReference(const Gui::SelectionChanges& msg);
     void selectedShape(const Gui::SelectionChanges& msg, SideController& side);
     void selectedShapeFace(const Gui::SelectionChanges& msg, SideController& side);
+    void selectedProfileRegion(const Gui::SelectionChanges& msg);
+
+    // Selection of closed sketch regions (InternalFaceN) used as profile
+    void setupProfileRegions();
+    void updateProfileRegions();
+    void setProfileRegions(const std::vector<std::string>& regions);
+    std::vector<std::string> getProfileRegions() const;
+    void enterProfileRegionSelection();
+    void exitProfileRegionSelection();
 
     void tryRecomputeFeature();
     void translateFaceName(QLineEdit*);
@@ -290,6 +303,10 @@ protected:
     QWidget* proxy;
     QAction* unselectShapeFaceAction;
     QAction* unselectShapeFaceAction2;
+    QAction* removeProfileRegionAction = nullptr;
+    // View providers hidden while sketch regions are selected
+    std::vector<Gui::ViewProvider*> hiddenForProfileSelection;
+    bool profileWasVisible = true;
 
     std::unique_ptr<Ui_TaskPadPocketParameters> ui;
     std::vector<std::unique_ptr<App::PropertyLinkSub>> axesInList;

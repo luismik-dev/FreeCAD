@@ -23,14 +23,18 @@
  ***************************************************************************/
 
 #include <QAction>
+#include <QTimer>
 #include <QAbstractButton>
 #include <QSignalBlocker>
 
 
 #include <App/Document.h>
+#include <App/ElementNamingUtils.h>
 #include <Base/Tools.h>
 #include <Base/UnitsApi.h>
+#include <Gui/Application.h>
 #include <Gui/Command.h>
+#include <Gui/Selection/Selection.h>
 #include <Gui/Tools.h>
 #include <Gui/Inventor/Draggers/Gizmo.h>
 #include <Gui/Inventor/Draggers/SoLinearDragger.h>
@@ -42,9 +46,75 @@
 #include "TaskExtrudeParameters.h"
 #include "TaskTransformedParameters.h"
 #include "ReferenceSelection.h"
+#include "ViewProvider.h"
+#include "ViewProviderBody.h"
 
 
 using namespace PartDesignGui;
+
+namespace
+{
+const std::string internalFacePrefix("InternalFace");
+
+// Returns the region name (InternalFaceN) if the sub-element resolves to a closed region
+// of the given profile, otherwise an empty string
+std::string resolveProfileRegion(
+    App::DocumentObject* obj,
+    const char* subname,
+    const App::DocumentObject* profile
+)
+{
+    if (!obj || !profile) {
+        return {};
+    }
+    const char* element = nullptr;
+    App::DocumentObject* target = obj->resolve(subname, nullptr, nullptr, &element);
+    if (target != profile || !element) {
+        return {};
+    }
+    std::string name = Data::oldElementName(element);
+    if (!name.starts_with(internalFacePrefix)) {
+        return {};
+    }
+    return name;
+}
+
+bool isProfileRegion(const std::string& sub)
+{
+    return Data::oldElementName(sub.c_str()).starts_with(internalFacePrefix);
+}
+
+int countProfileRegions(const App::DocumentObject* profile)
+{
+    if (!profile) {
+        return 0;
+    }
+    auto internalShape = dynamic_cast<Part::PropertyPartShape*>(
+        profile->getPropertyByName("InternalShape")
+    );
+    if (!internalShape) {
+        return 0;
+    }
+    return static_cast<int>(internalShape->getShape().countSubShapes(TopAbs_FACE));
+}
+
+// Only lets closed regions of the profile pass
+class ProfileRegionGate: public Gui::SelectionGate
+{
+public:
+    explicit ProfileRegionGate(App::DocumentObject* profile)
+        : profile(profile)
+    {}
+
+    bool allow(App::Document*, App::DocumentObject* obj, const char* subname) override
+    {
+        return !resolveProfileRegion(obj, subname, profile).empty();
+    }
+
+private:
+    App::DocumentObject* profile;
+};
+}  // namespace
 using namespace Gui;
 
 /* TRANSLATOR PartDesignGui::TaskExtrudeParameters */
@@ -86,6 +156,7 @@ void TaskExtrudeParameters::setupDialog()
 
     unselectShapeFaceAction = createRemoveAction();
     unselectShapeFaceAction2 = createRemoveAction();
+    removeProfileRegionAction = createRemoveAction();
 
     createSideControllers();
 
@@ -114,6 +185,7 @@ void TaskExtrudeParameters::setupDialog()
     ui->startOffsetEdit->bind(extrude->StartOffset);
 
     updateStartReferenceName();
+    setupProfileRegions();
 
     // --- Per-Side Setup using the Helper ---
     setupSideDialog(m_side1);
@@ -360,6 +432,12 @@ void TaskExtrudeParameters::connectSlots()
     connect(ui->buttonStartReference, &QAbstractButton::toggled, this, [this](bool checked) {
         onSelectStartReferenceToggle(checked);
     });
+    connect(ui->buttonProfileRegions, &QAbstractButton::toggled, this, [this](bool checked) {
+        onSelectProfileRegionsToggle(checked);
+    });
+    connect(removeProfileRegionAction, &QAction::triggered, this, [this]() {
+        onRemoveProfileRegions();
+    });
 
     // clang-format off
     connect(ui->directionCB, qOverload<int>(&QComboBox::activated),
@@ -448,6 +526,11 @@ void TaskExtrudeParameters::setSelectionMode(SelectionMode mode, Side side)
     updateCheckedForSide(Side::First, ui->buttonFace, ui->buttonShape, ui->buttonShapeFace);
     updateCheckedForSide(Side::Second, ui->buttonFace2, ui->buttonShape2, ui->buttonShapeFace2);
     ui->buttonStartReference->setChecked(mode == SelectStartReference);
+    ui->buttonProfileRegions->setChecked(mode == SelectProfileRegions);
+
+    if (selectionMode == SelectProfileRegions) {
+        exitProfileRegionSelection();
+    }
 
     selectionMode = mode;
     activeSelectionSide = side;
@@ -472,10 +555,173 @@ void TaskExtrudeParameters::setSelectionMode(SelectionMode mode, Side side)
         case SelectReferenceAxis:
             onSelectReference(AllowSelection::EDGE | AllowSelection::PLANAR | AllowSelection::CIRCLE);
             break;
+        case SelectProfileRegions:
+            enterProfileRegionSelection();
+            break;
         default:
             getViewObject<ViewProviderExtrude>()->highlightShapeFaces({});
             onSelectReference(AllowSelection::NONE);
     }
+}
+
+void TaskExtrudeParameters::setupProfileRegions()
+{
+    ui->listWidgetProfileRegions->addAction(removeProfileRegionAction);
+    ui->listWidgetProfileRegions->setContextMenuPolicy(Qt::ActionsContextMenu);
+    updateProfileRegions();
+}
+
+std::vector<std::string> TaskExtrudeParameters::getProfileRegions() const
+{
+    std::vector<std::string> regions;
+    if (auto extrude = getObject<PartDesign::FeatureExtrude>()) {
+        for (const auto& sub : extrude->Profile.getSubValues(false)) {
+            regions.push_back(Data::oldElementName(sub.c_str()));
+        }
+    }
+    return regions;
+}
+
+void TaskExtrudeParameters::setProfileRegions(const std::vector<std::string>& regions)
+{
+    auto extrude = getObject<PartDesign::FeatureExtrude>();
+    if (!extrude) {
+        return;
+    }
+    // Several regions are combined into one profile
+    extrude->AllowMultiFace.setValue(true);
+    // No region selected means that the whole sketch is used
+    extrude->Profile.setValue(extrude->Profile.getValue(), regions);
+
+    updateProfileRegions();
+    tryRecomputeFeature();
+    setGizmoPositions();
+}
+
+void TaskExtrudeParameters::updateProfileRegions()
+{
+    auto extrude = getObject<PartDesign::FeatureExtrude>();
+    const auto regions = getProfileRegions();
+
+    // Only offered for sketches with closed regions, and not if the profile consists of
+    // other sub-elements like edges that the list would drop
+    bool available = extrude && countProfileRegions(extrude->Profile.getValue()) > 0
+        && std::ranges::all_of(regions, isProfileRegion);
+    ui->groupProfiles->setVisible(available);
+    if (!available) {
+        return;
+    }
+
+    QSignalBlocker blocker(ui->listWidgetProfileRegions);
+    ui->listWidgetProfileRegions->clear();
+    if (regions.empty()) {
+        ui->listWidgetProfileRegions->addItem(tr("Whole sketch"));
+        return;
+    }
+    for (const auto& region : regions) {
+        auto number = QString::fromStdString(region.substr(internalFacePrefix.size()));
+        auto item = new QListWidgetItem(tr("Region %1").arg(number));
+        item->setData(Qt::UserRole, QString::fromStdString(region));
+        ui->listWidgetProfileRegions->addItem(item);
+    }
+}
+
+void TaskExtrudeParameters::onSelectProfileRegionsToggle(bool checked)
+{
+    if (checked) {
+        setSelectionMode(SelectProfileRegions);
+        ui->buttonProfileRegions->setText(tr("Preview"));
+    }
+    else {
+        setSelectionMode(None);
+        ui->buttonProfileRegions->setText(tr("Select Regions"));
+    }
+}
+
+void TaskExtrudeParameters::onRemoveProfileRegions()
+{
+    auto regions = getProfileRegions();
+    for (auto item : ui->listWidgetProfileRegions->selectedItems()) {
+        std::erase(regions, item->data(Qt::UserRole).toString().toStdString());
+    }
+    setProfileRegions(regions);
+}
+
+void TaskExtrudeParameters::selectedProfileRegion(const Gui::SelectionChanges& msg)
+{
+    auto extrude = getObject<PartDesign::FeatureExtrude>();
+    if (!extrude) {
+        return;
+    }
+
+    std::string region = resolveProfileRegion(
+        msg.Object.getObject(),
+        msg.pSubName,
+        extrude->Profile.getValue()
+    );
+    if (region.empty()) {
+        return;
+    }
+
+    // Toggle the clicked region
+    auto regions = getProfileRegions();
+    if (std::erase(regions, region) == 0) {
+        regions.push_back(region);
+    }
+    setProfileRegions(regions);
+
+    // Allow to click the same region again to remove it
+    QTimer::singleShot(0, this, []() { Gui::Selection().clearSelection(); });
+}
+
+void TaskExtrudeParameters::enterProfileRegionSelection()
+{
+    auto extrude = getObject<PartDesign::FeatureExtrude>();
+    auto profileView = extrude
+        ? Gui::Application::Instance->getViewProvider(extrude->Profile.getValue())
+        : nullptr;
+    if (!profileView) {
+        return;
+    }
+
+    // Hide the solid so that the regions of the sketch can be picked
+    hiddenForProfileSelection.clear();
+    auto hide = [this](Gui::ViewProvider* vp) {
+        if (vp && vp->isShow()) {
+            vp->hide();
+            hiddenForProfileSelection.push_back(vp);
+        }
+    };
+    auto view = getViewObject<PartDesignGui::ViewProvider>();
+    if (auto bodyView = view ? view->getBodyViewProvider() : nullptr) {
+        hide(bodyView->getShownViewProvider());
+    }
+    hide(view);
+
+    profileWasVisible = profileView->isShow();
+    profileView->show();
+
+    blockSelection(false);
+    Gui::Selection().clearSelection();
+    Gui::Selection().addSelectionGate(new ProfileRegionGate(extrude->Profile.getValue()));
+}
+
+void TaskExtrudeParameters::exitProfileRegionSelection()
+{
+    Gui::Selection().rmvSelectionGate();
+    blockSelection(true);
+
+    auto extrude = getObject<PartDesign::FeatureExtrude>();
+    auto profileView = extrude
+        ? Gui::Application::Instance->getViewProvider(extrude->Profile.getValue())
+        : nullptr;
+    if (profileView && !profileWasVisible) {
+        profileView->hide();
+    }
+    for (auto vp : hiddenForProfileSelection) {
+        vp->show();
+    }
+    hiddenForProfileSelection.clear();
 }
 
 void TaskExtrudeParameters::tryRecomputeFeature()
@@ -512,6 +758,10 @@ void TaskExtrudeParameters::onSelectionChanged(const Gui::SelectionChanges& msg)
 
             case SelectReferenceAxis:
                 selectedReferenceAxis(msg);
+                break;
+
+            case SelectProfileRegions:
+                selectedProfileRegion(msg);
                 break;
 
             default:

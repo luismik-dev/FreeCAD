@@ -326,6 +326,76 @@ class CreateSketch(unittest.TestCase):
         param.SetBool("NewSketchUseAttachmentDialog", useAttachmentSaved)
 
 
+class CallableRejectUnexpectedDialog:
+    """Closes a modal dialog that should not have been shown and remembers it"""
+
+    def __init__(self):
+        self.shown = False
+
+    def __call__(self):
+        dialog = QApplication.activeModalWidget()
+        if dialog is not None:
+            self.shown = True
+            QtCore.QTimer.singleShot(0, dialog, QtCore.SLOT("reject()"))
+
+
+class QuickSketchStart(unittest.TestCase):
+    """A sketch on a preselected plane starts without asking for a body"""
+
+    def setUp(self):
+        self.param = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/PartDesign")
+        self.useAttachmentSaved = self.param.GetBool("NewSketchUseAttachmentDialog", False)
+        self.param.SetBool("NewSketchUseAttachmentDialog", False)
+        self.Doc = App.newDocument("QuickSketchStart")
+        FreeCADGui.activateView("Gui::View3DInventor", True)
+
+    def tearDown(self):
+        FreeCADGui.Control.closeDialog()
+        FreeCADGui.ActiveDocument.resetEdit()
+        App.closeDocument(self.Doc.Name)
+        self.param.SetBool("NewSketchUseAttachmentDialog", self.useAttachmentSaved)
+
+    @staticmethod
+    def xyPlane(container):
+        return [f for f in container.Origin.OriginFeatures if f.Role == "XY_Plane"][0]
+
+    def runNewSketch(self):
+        guard = CallableRejectUnexpectedDialog()
+        QtCore.QTimer.singleShot(500, guard)
+        FreeCADGui.runCommand("PartDesign_NewSketch", 0)
+        QApplication.processEvents()
+        self.assertFalse(guard.shown, "Unexpected modal dialog")
+        sketches = self.Doc.findObjects("Sketcher::SketchObject")
+        self.assertEqual(len(sketches), 1)
+        return sketches[0]
+
+    def testNoBodyCreatesBodyInActivePart(self):
+        part = self.Doc.addObject("App::Part", "Part")
+        self.Doc.recompute()
+        FreeCADGui.activeView().setActiveObject("part", part)
+        FreeCADGui.Selection.clearSelection()
+        FreeCADGui.Selection.addSelection(self.xyPlane(part))
+
+        sketch = self.runNewSketch()
+
+        bodies = self.Doc.findObjects("PartDesign::Body")
+        self.assertEqual(len(bodies), 1)
+        self.assertIn(bodies[0], part.Group)
+        self.assertIn(sketch, bodies[0].Group)
+
+    def testSelectedPlaneChoosesBody(self):
+        body1 = self.Doc.addObject("PartDesign::Body", "Body1")
+        body2 = self.Doc.addObject("PartDesign::Body", "Body2")
+        self.Doc.recompute()
+        FreeCADGui.Selection.clearSelection()
+        FreeCADGui.Selection.addSelection(self.xyPlane(body2))
+
+        sketch = self.runNewSketch()
+
+        self.assertIn(sketch, body2.Group)
+        self.assertNotIn(sketch, body1.Group)
+
+
 # class PartDesignGuiTestCases(unittest.TestCase):
 #   def setUp(self):
 #       self.Doc = FreeCAD.newDocument("SketchGuiTest")

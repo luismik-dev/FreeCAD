@@ -54,6 +54,7 @@ public:
 private:
     void tryCreateSketch();
     std::tuple<bool, PartDesign::Body*> shouldCreateBody();
+    PartDesign::Body* activateBodyOfSelection() const;
     bool shouldAbort(bool) const;
     std::tuple<Gui::SelectionFilter, Gui::SelectionFilter, Gui::SelectionFilter> getFilters() const;
 

@@ -31,6 +31,7 @@
 #include <App/Origin.h>
 #include <App/Datums.h>
 #include <App/Part.h>
+#include <Base/Tools.h>
 #include <Gui/Application.h>
 #include <Gui/CommandT.h>
 #include <Gui/MainWindow.h>
@@ -228,7 +229,30 @@ PartDesign::Body* makeBody(App::Document* doc)
         bodyName.c_str(),
         Gui::asString(allowCompound)
     );
+    // set Label for i18n/L10N
+    std::string label = Base::Tools::escapeEncodeString(QObject::tr("Body").toStdString());
+    Gui::Command::doCommand(
+        Gui::Command::Doc,
+        "App.getDocument('%s').getObject('%s').Label = '%s'",
+        doc->getName(),
+        bodyName.c_str(),
+        label.c_str()
+    );
 
+    // Put the body into the active container before activating it, so that the
+    // active object path includes the container
+    App::Part* activePart = getActivePart();
+    if (activePart && activePart->getDocument() == doc) {
+        Gui::Command::doCommand(
+            Gui::Command::Doc,
+            "App.getDocument('%s').getObject('%s').addObject("
+            "App.getDocument('%s').getObject('%s'))",
+            doc->getName(),
+            activePart->getNameInDocument(),
+            doc->getName(),
+            bodyName.c_str()
+        );
+    }
 
     auto body = dynamic_cast<PartDesign::Body*>(doc->getObject(bodyName.c_str()));
     if (body) {

@@ -52,6 +52,7 @@
 #include <App/Link.h>
 #include <App/Origin.h>
 #include <App/Datums.h>
+#include <App/GeoFeatureGroupExtension.h>
 #include <App/Part.h>
 #include <Gui/Application.h>
 #include <Gui/Command.h>
@@ -228,6 +229,20 @@ public:
 
     void createSupport()
     {
+        // Start command early, so undo will undo any Body creation together with the sketch
+        guidocument->openCommand(QT_TRANSLATE_NOOP("Command", "Sketch on Face"));
+        try {
+            tryCreateSupport();
+        }
+        catch (...) {
+            guidocument->abortCommand();
+            throw;
+        }
+    }
+
+private:
+    void tryCreateSupport()
+    {
         createBodyOrThrow();
 
         // get the selected object
@@ -257,6 +272,7 @@ public:
         handleIfSupportOutOfBody(selectedObject);
     }
 
+public:
     void createSketchOnSupport(const std::string& supportString)
     {
         // create Sketch on Face or Plane
@@ -287,22 +303,13 @@ public:
 private:
     void createBodyOrThrow()
     {
+        // Like in other CAD programs a sketch on a face or plane doesn't require to create
+        // a body up front
         if (!activeBody) {
-            activeBody = PartDesignGui::getBody(/* messageIfNot = */ true);
-            if (activeBody) {
-                tryAddNewBodyToActivePart();
-            }
-            else {
+            activeBody = PartDesignGui::makeBody(guidocument->getDocument());
+            if (!activeBody) {
                 throw RejectException();
             }
-        }
-    }
-
-    void tryAddNewBodyToActivePart()
-    {
-        App::Part* activePart = PartDesignGui::getActivePart();
-        if (activePart) {
-            activePart->addObject(activeBody);
         }
     }
 
@@ -553,20 +560,9 @@ private:
         if (!activeBody) {
             App::Document* appdocument = guidocument->getDocument();
             activeBody = PartDesignGui::makeBody(appdocument);
-            if (activeBody) {
-                tryAddNewBodyToActivePart();
-            }
-            else {
+            if (!activeBody) {
                 throw RejectException();
             }
-        }
-    }
-
-    void tryAddNewBodyToActivePart()
-    {
-        App::Part* activePart = PartDesignGui::getActivePart();
-        if (activePart) {
-            activePart->addObject(activeBody);
         }
     }
 
@@ -921,6 +917,9 @@ std::tuple<bool, PartDesign::Body*> SketchWorkflow::shouldCreateBody()
         pdBody->Placement.setValue(xLink->Placement.getValue());
     }
     if (!pdBody) {
+        pdBody = activateBodyOfSelection();
+    }
+    if (!pdBody) {
         if (appdocument->countObjectsOfType<PartDesign::Body>() == 0) {
             shouldMakeBody = true;
         }
@@ -933,6 +932,32 @@ std::tuple<bool, PartDesign::Body*> SketchWorkflow::shouldCreateBody()
     }
 
     return std::make_tuple(shouldMakeBody, pdBody);
+}
+
+PartDesign::Body* SketchWorkflow::activateBodyOfSelection() const
+{
+    // If a face or plane of a body is selected, sketch in that body instead of asking for it
+    auto selection = Gui::Selection().getSelectionEx(appdocument->getName());
+    if (selection.size() != 1) {
+        return nullptr;
+    }
+
+    App::DocumentObject* object = selection.front().getObject();
+    auto body = freecad_cast<PartDesign::Body*>(object);
+    if (!body) {
+        body = PartDesign::Body::findBodyOf(object);
+    }
+    if (!body) {
+        // e.g. a plane of the origin of a body
+        body = freecad_cast<PartDesign::Body*>(
+            App::GeoFeatureGroupExtension::getGroupOfObject(object)
+        );
+    }
+    if (!body) {
+        return nullptr;
+    }
+
+    return PartDesignGui::makeBodyActive(body, appdocument);
 }
 
 bool SketchWorkflow::shouldAbort(bool shouldMakeBody) const

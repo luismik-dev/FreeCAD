@@ -83,7 +83,8 @@ PartDesign::Body* makeBodyActive(
 /// Display error when there are existing Body objects, but none are active
 void needActiveBodyError();
 
-/// Create a Body object in doc, set it active, and return pointer to it
+/// Create a Body object in doc, add it to the active Part or Assembly of that document,
+/// set it active, and return pointer to it
 PartDesign::Body* makeBody(App::Document* doc);
 
 /**

@@ -565,6 +565,20 @@ private:
     SbBool lockButton1 {false};
 };
 
+/// Mouse navigation as known from Autodesk Fusion and Inventor. It uses the same
+/// button mapping as the Revit style and exists so that users of these programs find it.
+class GuiExport FusionNavigationStyle: public RevitNavigationStyle
+{
+    using inherited = RevitNavigationStyle;
+
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
+
+public:
+    FusionNavigationStyle();
+    ~FusionNavigationStyle() override;
+    std::string userFriendlyName() const override;
+};
+
 class GuiExport BlenderNavigationStyle: public UserNavigationStyle
 {
     using inherited = UserNavigationStyle;

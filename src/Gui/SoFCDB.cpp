@@ -218,6 +218,7 @@ void Gui::SoFCDB::init()
     InventorNavigationStyle::init();
     OpenSCADNavigationStyle::init();
     RevitNavigationStyle::init();
+    FusionNavigationStyle::init();
     SiemensNXNavigationStyle::init();
     SolidWorksNavigationStyle::init();
     TinkerCADNavigationStyle::init();

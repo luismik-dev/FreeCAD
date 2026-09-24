@@ -23,29 +23,38 @@
  ***************************************************************************/
 
 #include <QAction>
+#include <QApplication>
+#include <QMessageBox>
+#include <QStandardItemModel>
 #include <QTimer>
 #include <QAbstractButton>
 #include <QSignalBlocker>
 
 
+#include <App/Application.h>
 #include <App/Document.h>
 #include <App/ElementNamingUtils.h>
 #include <Base/Tools.h>
 #include <Base/UnitsApi.h>
 #include <Gui/Application.h>
 #include <Gui/Command.h>
+#include <Gui/Control.h>
 #include <Gui/Selection/Selection.h>
 #include <Gui/Tools.h>
 #include <Gui/Inventor/Draggers/Gizmo.h>
 #include <Gui/Inventor/Draggers/SoLinearDragger.h>
 #include <Gui/Inventor/Draggers/SoRotationDragger.h>
+#include <Mod/PartDesign/App/Body.h>
 #include <Mod/PartDesign/App/FeatureExtrude.h>
+#include <Mod/PartDesign/App/FeaturePocket.h>
+#include <Mod/PartDesign/App/ShapeBinder.h>
 #include <Mod/Part/App/GizmoHelper.h>
 
 #include "ui_TaskPadPocketParameters.h"
 #include "TaskExtrudeParameters.h"
 #include "TaskTransformedParameters.h"
 #include "ReferenceSelection.h"
+#include "Utils.h"
 #include "ViewProvider.h"
 #include "ViewProviderBody.h"
 
@@ -77,6 +86,65 @@ std::string resolveProfileRegion(
         return {};
     }
     return name;
+}
+
+// Replaces a pad by a pocket or vice versa while its task dialog is open. The dialog is
+// closed without committing the transaction, so that accepting the dialog of the new
+// feature creates a single undo step and rejecting it restores the original state.
+void replaceExtrudeFeature(App::DocumentObject* feature, const char* type, int operation)
+{
+    auto body = PartDesign::Body::findBodyOf(feature);
+    if (!body) {
+        return;
+    }
+    App::Document* doc = feature->getDocument();
+
+    Gui::Control().closeDialog();
+
+    std::string baseName = std::string(type).substr(std::string("PartDesign::").size());
+    auto newFeature = freecad_cast<PartDesign::FeatureExtrude*>(
+        doc->addObject(type, doc->getUniqueObjectName(baseName.c_str()).c_str())
+    );
+    if (!newFeature) {
+        return;
+    }
+    body->replaceFeature(feature, newFeature);
+    if (newFeature->getAddSubType() == PartDesign::FeatureAddSub::Type::Subtractive) {
+        newFeature->Operation.setValue(operation);
+    }
+    newFeature->recomputeFeature();
+
+    PartDesignGui::setEdit(newFeature, body);
+}
+
+// Moves the extrusion into a new body that references the profile with a sub-shape binder,
+// because a feature must not link to a sketch of another body directly
+void moveExtrudeToNewBody(PartDesign::FeatureExtrude* feature)
+{
+    auto oldBody = PartDesign::Body::findBodyOf(feature);
+    App::DocumentObject* profile = feature->Profile.getValue();
+    if (!oldBody || !profile) {
+        return;
+    }
+    auto regions = feature->Profile.getSubValues();
+    App::Document* doc = feature->getDocument();
+
+    PartDesign::Body* newBody = PartDesignGui::makeBody(doc);
+    if (!newBody) {
+        return;
+    }
+
+    auto binder = doc->addObject<PartDesign::SubShapeBinder>(
+        doc->getUniqueObjectName("Binder").c_str()
+    );
+    newBody->addObject(binder);
+    binder->Support.setValue(profile, regions);
+
+    oldBody->removeObject(feature);
+    newBody->addObject(feature);
+    feature->Profile.setValue(binder);
+    feature->AllowMultiFace.setValue(true);
+    doc->recompute();
 }
 
 bool isProfileRegion(const std::string& sub)
@@ -133,6 +201,7 @@ TaskExtrudeParameters::TaskExtrudeParameters(
     proxy = new QWidget(this);
     ui->setupUi(proxy);
     setupOperation(ui->labelOperation, ui->comboOperation);
+    setupExtrudeOperation();
     handleLineFaceNameNo(ui->lineFaceName);
     handleLineFaceNameNo(ui->lineFaceName2);
     ui->lineStartReference->setPlaceholderText(tr("No start reference selected"));
@@ -722,6 +791,100 @@ void TaskExtrudeParameters::exitProfileRegionSelection()
         vp->show();
     }
     hiddenForProfileSelection.clear();
+}
+
+void TaskExtrudeParameters::setupExtrudeOperation()
+{
+    auto extrude = getObject<PartDesign::FeatureExtrude>();
+    if (!extrude) {
+        return;
+    }
+    // Replace the operations of the subtractive features by the complete list
+    QComboBox* combo = ui->comboOperation;
+    combo->disconnect(this);
+    QSignalBlocker blocker(combo);
+    combo->clear();
+    combo->addItem(tr("Join"));
+    combo->addItem(tr("Cut"));
+    combo->addItem(tr("Intersect"));
+    combo->addItem(tr("New Body"));
+    combo->setToolTip(tr("Whether the extrusion adds to, cuts from or intersects with the body, "
+                         "or creates a new body"));
+    ui->labelOperation->setVisible(true);
+    combo->setVisible(true);
+
+    const bool subtractive = extrude->getAddSubType()
+        == PartDesign::FeatureAddSub::Type::Subtractive;
+    // A new body can only be started with material
+    if (auto model = qobject_cast<QStandardItemModel*>(combo->model()); model && subtractive) {
+        model->item(static_cast<int>(Operation::NewBody))->setEnabled(false);
+    }
+    combo->setCurrentIndex(static_cast<int>(currentOperation()));
+    combo->setDisabled(extrude->Operation.isReadOnly());
+
+    connect(combo, qOverload<int>(&QComboBox::activated), this, [this](int index) {
+        onOperationChanged(index);
+    });
+}
+
+TaskExtrudeParameters::Operation TaskExtrudeParameters::currentOperation() const
+{
+    auto extrude = getObject<PartDesign::FeatureExtrude>();
+    if (!extrude || extrude->getAddSubType() == PartDesign::FeatureAddSub::Type::Additive) {
+        return newBodyRequested ? Operation::NewBody : Operation::Join;
+    }
+    return extrude->Operation.getValue() == 0 ? Operation::Cut : Operation::Intersect;
+}
+
+void TaskExtrudeParameters::onOperationChanged(int index)
+{
+    auto extrude = getObject<PartDesign::FeatureExtrude>();
+    if (!extrude) {
+        return;
+    }
+    const auto operation = static_cast<Operation>(index);
+    const bool subtractive = extrude->getAddSubType()
+        == PartDesign::FeatureAddSub::Type::Subtractive;
+    const bool wantSubtractive = operation == Operation::Cut || operation == Operation::Intersect;
+    newBodyRequested = operation == Operation::NewBody;
+
+    if (subtractive == wantSubtractive) {
+        if (subtractive) {
+            extrude->Operation.setValue(operation == Operation::Cut ? 0 : 1);
+            recomputeFeature();
+        }
+        return;
+    }
+
+    // Switching between adding and removing material needs another feature type.
+    // Features depending on this one would lose their references, so don't allow it then.
+    auto body = PartDesign::Body::findBodyOf(extrude);
+    for (auto obj : extrude->getInList()) {
+        if (obj != body) {
+            QMessageBox::warning(
+                this,
+                tr("Operation cannot be changed"),
+                tr("'%1' is used by other objects. Delete the pad or pocket and create the "
+                   "other type instead.")
+                    .arg(QString::fromUtf8(extrude->Label.getValue()))
+            );
+            QSignalBlocker blocker(ui->comboOperation);
+            ui->comboOperation->setCurrentIndex(static_cast<int>(currentOperation()));
+            return;
+        }
+    }
+
+    // The dialog gets closed while replacing the feature, so do it once the signal returned
+    const char* type = wantSubtractive ? "PartDesign::Pocket" : "PartDesign::Pad";
+    const int booleanOperation = operation == Operation::Intersect ? 1 : 0;
+    std::string docName = extrude->getDocument()->getName();
+    std::string featureName = extrude->getNameInDocument();
+    QTimer::singleShot(0, qApp, [docName, featureName, type, booleanOperation]() {
+        App::Document* doc = App::GetApplication().getDocument(docName.c_str());
+        if (auto feature = doc ? doc->getObject(featureName.c_str()) : nullptr) {
+            replaceExtrudeFeature(feature, type, booleanOperation);
+        }
+    });
 }
 
 void TaskExtrudeParameters::tryRecomputeFeature()
@@ -1842,6 +2005,12 @@ TaskDlgExtrudeParameters::TaskDlgExtrudeParameters(PartDesignGui::ViewProviderEx
 bool TaskDlgExtrudeParameters::accept()
 {
     getTaskParameters()->setSelectionMode(TaskExtrudeParameters::None);
+
+    if (getTaskParameters()->isNewBodyRequested()) {
+        if (auto extrude = getObject<PartDesign::FeatureExtrude>()) {
+            moveExtrudeToNewBody(extrude);
+        }
+    }
 
     return TaskDlgSketchBasedParameters::accept();
 }

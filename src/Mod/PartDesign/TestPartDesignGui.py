@@ -461,6 +461,84 @@ class PadProfileRegions(unittest.TestCase):
         self.assertEqual(self.Sketch.Visibility, sketchVisible)
 
 
+class PadOperation(unittest.TestCase):
+    """The operation of the Pad/Pocket task panel changes the feature type or the body"""
+
+    JOIN, CUT, INTERSECT, NEW_BODY = range(4)
+
+    def setUp(self):
+        self.Doc = App.newDocument("PadOperation")
+        self.Body = self.Doc.addObject("PartDesign::Body", "Body")
+        self.Sketch = self.Body.newObject("Sketcher::SketchObject", "Sketch")
+        import TestSketcherApp
+
+        TestSketcherApp.CreateRectangleSketch(self.Sketch, (0, 0), (10, 10))
+        self.Pad = self.Body.newObject("PartDesign::Pad", "Pad")
+        self.Pad.Profile = self.Sketch
+        self.Pad.Length = 7
+        self.Doc.recompute()
+        FreeCADGui.activateView("Gui::View3DInventor", True)
+
+    def tearDown(self):
+        FreeCADGui.Control.closeDialog()
+        FreeCADGui.ActiveDocument.resetEdit()
+        App.closeDocument(self.Doc.Name)
+
+    @staticmethod
+    def processEvents():
+        for _ in range(5):
+            QApplication.processEvents()
+
+    def chooseOperation(self, index):
+        combo = FreeCADGui.getMainWindow().findChild(QtGui.QComboBox, "comboOperation")
+        self.assertIsNotNone(combo)
+        self.assertEqual(combo.count(), 4)
+        combo.setCurrentIndex(index)
+        combo.activated.emit(index)
+        self.processEvents()
+
+    def closeTaskDialog(self, accept):
+        dialog = FreeCADGui.Control.activeTaskDialog()
+        self.assertIsNotNone(dialog)
+        if accept:
+            dialog.accept()
+        else:
+            dialog.reject()
+        self.processEvents()
+
+    def testSwitchToPocketAndCancel(self):
+        self.Doc.openTransaction("Edit Pad")
+        FreeCADGui.ActiveDocument.setEdit(self.Pad)
+        self.chooseOperation(self.CUT)
+
+        pockets = self.Doc.findObjects("PartDesign::Pocket")
+        self.assertEqual(len(pockets), 1)
+        self.assertIsNone(self.Doc.getObject("Pad"))
+        self.assertEqual(pockets[0].Length.Value, 7)
+        self.assertEqual(self.Body.Tip, pockets[0])
+        self.assertIsNotNone(FreeCADGui.Control.activeDialog())
+
+        # cancel restores the pad
+        self.closeTaskDialog(accept=False)
+        self.assertIsNotNone(self.Doc.getObject("Pad"))
+        self.assertEqual(len(self.Doc.findObjects("PartDesign::Pocket")), 0)
+
+    def testNewBody(self):
+        self.Doc.openTransaction("Edit Pad")
+        FreeCADGui.ActiveDocument.setEdit(self.Pad)
+        self.chooseOperation(self.NEW_BODY)
+        self.closeTaskDialog(accept=True)
+
+        bodies = self.Doc.findObjects("PartDesign::Body")
+        self.assertEqual(len(bodies), 2)
+        newBody = [b for b in bodies if b != self.Body][0]
+        self.assertIn(self.Pad, newBody.Group)
+        self.assertNotIn(self.Pad, self.Body.Group)
+        self.assertIn(self.Sketch, self.Body.Group)
+        self.assertTrue(self.Pad.Profile[0].isDerivedFrom("PartDesign::SubShapeBinder"))
+        self.assertAlmostEqual(self.Pad.Shape.Volume, 700)
+
+
 # class PartDesignGuiTestCases(unittest.TestCase):
 #   def setUp(self):
 #       self.Doc = FreeCAD.newDocument("SketchGuiTest")

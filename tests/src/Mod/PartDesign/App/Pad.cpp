@@ -10,6 +10,8 @@
 #include <Mod/Part/App/Geometry.h>
 #include <Mod/PartDesign/App/Body.h>
 #include <Mod/PartDesign/App/FeaturePad.h>
+#include <Mod/PartDesign/App/FeaturePocket.h>
+#include <Mod/PartDesign/App/ShapeBinder.h>
 #include <Mod/Sketcher/App/SketchObject.h>
 
 // NOLINTBEGIN(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)
@@ -162,6 +164,74 @@ TEST_F(PadRegionsTest, TestRegionsConsumedOneByOne)
     GProp_GProps properties;
     BRepGProp::VolumeProperties(pad2->Shape.getValue(), properties);
     EXPECT_NEAR(properties.Mass(), 4000.0, 1e-6);
+}
+
+namespace
+{
+double volumeOf(const TopoDS_Shape& shape)
+{
+    GProp_GProps properties;
+    BRepGProp::VolumeProperties(shape, properties);
+    return properties.Mass();
+}
+}  // namespace
+
+TEST_F(PadRegionsTest, TestReplacePadByPocket)
+{
+    auto doc = getDocument();
+    auto body = getBody();
+
+    // Both regions give the full 20x20x10 block
+    auto pad = addPad("Pad", {"InternalFace1", "InternalFace2"});
+    auto pad2 = addPad("Pad2", {"InternalFace1"});
+    pad2->Length.setValue(5.0);
+    doc->recompute();
+    ASSERT_EQ(body->Tip.getValue(), pad2);
+
+    auto pocket = doc->addObject<PartDesign::Pocket>("Pocket");
+    body->replaceFeature(pad2, pocket);
+
+    EXPECT_EQ(doc->getObject("Pad2"), nullptr);
+    EXPECT_EQ(body->Group.getValues().back(), pocket);
+    EXPECT_EQ(body->Tip.getValue(), pocket);
+    EXPECT_EQ(pocket->BaseFeature.getValue(), pad);
+    EXPECT_EQ(pocket->Profile.getValue(), getSketch());
+    EXPECT_EQ(pocket->Profile.getSubValues(), std::vector<std::string> {"InternalFace1"});
+    EXPECT_DOUBLE_EQ(pocket->Length.getValue(), 5.0);
+    EXPECT_STREQ(pocket->Type.getValueAsString(), "Length");
+
+    // A pocket removes material opposite to the sketch normal, the sketch is at the bottom
+    pocket->Reversed.setValue(true);
+    doc->recompute();
+    EXPECT_FALSE(pocket->isError());
+    // Either the inner square or the ring is cut 5 deep out of the 20x20x10 block
+    double volume = volumeOf(pocket->Shape.getValue());
+    EXPECT_TRUE(std::abs(volume - 3500.0) < 1e-6 || std::abs(volume - 2500.0) < 1e-6) << volume;
+}
+
+TEST_F(PadRegionsTest, TestRegionsUsedThroughBinder)
+{
+    auto doc = getDocument();
+    auto sketch = getSketch();
+
+    // Pad a region in another body, like the 'New Body' operation does
+    auto body2 = doc->addObject<PartDesign::Body>("Body2");
+    auto binder = doc->addObject<PartDesign::SubShapeBinder>("Binder");
+    body2->addObject(binder);
+    binder->Support.setValue(sketch, std::vector<std::string> {"InternalFace1"});
+    auto pad = doc->addObject<PartDesign::Pad>("PadInBody2");
+    body2->addObject(pad);
+    pad->Profile.setValue(binder);
+    pad->Length.setValue(10.0);
+    doc->recompute();
+
+    EXPECT_FALSE(pad->isError());
+    double volume = volumeOf(pad->Shape.getValue());
+    EXPECT_TRUE(std::abs(volume - 1000.0) < 1e-6 || std::abs(volume - 3000.0) < 1e-6) << volume;
+    EXPECT_FALSE(PartDesign::ProfileBased::isProfileFullyConsumed(sketch));
+
+    addPad("Pad", {"InternalFace2"});
+    EXPECT_TRUE(PartDesign::ProfileBased::isProfileFullyConsumed(sketch));
 }
 
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)

@@ -72,6 +72,7 @@
 
 #include "Body.h"
 #include "FeatureSketchBased.h"
+#include "ShapeBinder.h"
 #include "DatumLine.h"
 #include "DatumPlane.h"
 #include "Mod/Part/App/Geometry.h"
@@ -1153,7 +1154,35 @@ bool ProfileBased::isProfileFullyConsumed(
 
     static const std::string internalFace("InternalFace");
     std::set<int> usedRegions;
+    // Returns the region index of a sub-element name, or 0 if it's not a region
+    auto regionIndex = [](const std::string& sub) {
+        std::string element = Data::findElementName(sub.c_str());
+        if (!element.starts_with(internalFace)) {
+            return 0;
+        }
+        try {
+            return std::stoi(element.substr(internalFace.size()));
+        }
+        catch (const std::exception&) {
+            return 0;
+        }
+    };
+
     for (auto obj : profile->getInList()) {
+        // Regions used by features of other bodies through a binder
+        if (auto binder = freecad_cast<SubShapeBinder*>(obj)) {
+            auto subs = binder->Support.getSubValues(
+                const_cast<App::DocumentObject*>(profile),  // NOLINT
+                false
+            );
+            for (const auto& sub : subs) {
+                if (int index = regionIndex(sub)) {
+                    usedRegions.insert(index);
+                }
+            }
+            continue;
+        }
+
         auto feature = freecad_cast<ProfileBased*>(obj);
         if (!feature || feature == ignore || feature->Profile.getValue() != profile) {
             continue;
@@ -1163,16 +1192,11 @@ bool ProfileBased::isProfileFullyConsumed(
             return true;
         }
         for (const auto& sub : subs) {
-            std::string element = Data::findElementName(sub.c_str());
-            if (!element.starts_with(internalFace)) {
+            int index = regionIndex(sub);
+            if (index == 0) {
                 return true;
             }
-            try {
-                usedRegions.insert(std::stoi(element.substr(internalFace.size())));
-            }
-            catch (const std::exception&) {
-                return true;
-            }
+            usedRegions.insert(index);
         }
     }
 

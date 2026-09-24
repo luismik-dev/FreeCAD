@@ -23,6 +23,8 @@
  ***************************************************************************/
 
 
+#include <set>
+
 #include <App/Document.h>
 #include <App/GeoFeature.h>
 #include <App/VarSet.h>
@@ -320,6 +322,62 @@ void Body::insertObject(App::DocumentObject* feature, App::DocumentObject* targe
 
     // Set the BaseFeature property
     setBaseProperty(feature);
+}
+
+void Body::replaceFeature(App::DocumentObject* oldFeature, App::DocumentObject* newFeature)
+{
+    if (!oldFeature || !hasObject(oldFeature)) {
+        throw Base::ValueError("Body: the feature to replace is not part of that body");
+    }
+    if (!newFeature || findBodyOf(newFeature)) {
+        throw Base::ValueError("Body: the replacement feature is already part of a body");
+    }
+
+    // Properties that are computed or managed by the body
+    static const std::set<std::string> skipped {
+        "Label",
+        "Label2",
+        "Visibility",
+        "ExpressionEngine",
+        "Placement",
+        "Shape",
+        "AddSubShape",
+        "SuppressedShape",
+        "BaseFeature",
+        "_Body",
+    };
+
+    std::vector<App::Property*> properties;
+    oldFeature->getPropertyList(properties);
+    for (auto source : properties) {
+        const char* name = source->getName();
+        if (!name || skipped.contains(name)) {
+            continue;
+        }
+        App::Property* target = newFeature->getPropertyByName(name);
+        if (!target || target->getTypeId() != source->getTypeId() || target->isReadOnly()) {
+            continue;
+        }
+        if (auto sourceEnum = freecad_cast<App::PropertyEnumeration*>(source)) {
+            // The enumerations of different feature types may differ
+            auto targetEnum = static_cast<App::PropertyEnumeration*>(target);
+            const char* value = sourceEnum->getValueAsString();
+            if (value && targetEnum->isValue(value)) {
+                targetEnum->setValue(value);
+            }
+            continue;
+        }
+        target->Paste(*source);
+    }
+
+    const bool wasTip = Tip.getValue() == oldFeature;
+    insertObject(newFeature, oldFeature, /*after=*/true);
+    removeObject(oldFeature);
+    if (wasTip) {
+        Tip.setValue(newFeature);
+    }
+
+    getDocument()->removeObject(oldFeature->getNameInDocument());
 }
 
 void Body::setBaseProperty(App::DocumentObject* feature)

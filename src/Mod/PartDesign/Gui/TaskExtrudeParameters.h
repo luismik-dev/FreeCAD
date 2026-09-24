@@ -147,6 +147,21 @@ public:
 
     void setSelectionMode(SelectionMode mode, Side side = Side::First);
 
+    /// The operations offered in the task panel, like in other CAD programs
+    enum class Operation
+    {
+        Join,
+        Cut,
+        Intersect,
+        NewBody
+    };
+
+    /// True if the feature shall be moved into a new body when the dialog is accepted
+    bool isNewBodyRequested() const
+    {
+        return newBodyRequested;
+    }
+
 protected:
     // This struct holds all pointers for one side's UI and properties
     struct SideController
@@ -217,6 +232,7 @@ private:
     void onUnselectShapeFacesTrigger(Side side);
     void onSelectProfileRegionsToggle(bool checked);
     void onRemoveProfileRegions();
+    void onOperationChanged(int index);
 
 protected:
     void updateWholeUI(Type type, Side side);
@@ -267,6 +283,8 @@ private:
 
     // Selection of closed sketch regions (InternalFaceN) used as profile
     void setupProfileRegions();
+    void setupExtrudeOperation();
+    Operation currentOperation() const;
     void updateProfileRegions();
     void setProfileRegions(const std::vector<std::string>& regions);
     std::vector<std::string> getProfileRegions() const;
@@ -307,6 +325,7 @@ protected:
     // View providers hidden while sketch regions are selected
     std::vector<Gui::ViewProvider*> hiddenForProfileSelection;
     bool profileWasVisible = true;
+    bool newBodyRequested = false;
 
     std::unique_ptr<Ui_TaskPadPocketParameters> ui;
     std::vector<std::unique_ptr<App::PropertyLinkSub>> axesInList;

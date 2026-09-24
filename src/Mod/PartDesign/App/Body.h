@@ -83,6 +83,19 @@ public:
      */
     void insertObject(App::DocumentObject* feature, App::DocumentObject* target, bool after = false);
 
+    /**
+     * Replaces a feature of the body by a new feature, e.g. a Pad by a Pocket
+     *
+     * The new feature takes the position of the old one in the body and in the chain of
+     * base features, becomes the Tip if the old one was, and gets the values of all properties
+     * of the old feature that have the same name and type. Enumerations are only taken over
+     * if the new feature knows the value. The old feature is removed from the document.
+     *
+     * @param oldFeature the feature to replace, must be part of the body
+     * @param newFeature the replacement, must not be part of any body yet
+     */
+    void replaceFeature(App::DocumentObject* oldFeature, App::DocumentObject* newFeature);
+
     void setBaseProperty(App::DocumentObject* feature);
 
     /// Remove the feature from the body

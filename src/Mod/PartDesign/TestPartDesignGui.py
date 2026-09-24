@@ -473,6 +473,24 @@ class CommandSearch(unittest.TestCase):
         if popup is not None:
             popup.close()
         App.closeDocument(self.Doc.Name)
+        # The closed popups can leave no active window, which later keyboard tests need.
+        # The window manager activates a new window, and the main window once it closes.
+        window = FreeCADGui.getMainWindow()
+        if QApplication.activeWindow() is None:
+            dialog = QtGui.QDialog(window)
+            dialog.show()
+            self.waitForActiveWindow(dialog)
+            dialog.close()
+            dialog.deleteLater()
+            self.waitForActiveWindow(window)
+
+    @staticmethod
+    def waitForActiveWindow(window, ms=2000):
+        import time
+
+        end = time.time() + ms / 1000.0
+        while time.time() < end and QApplication.activeWindow() is not window:
+            QApplication.processEvents()
 
     def testRunCommandFromSearch(self):
         try:

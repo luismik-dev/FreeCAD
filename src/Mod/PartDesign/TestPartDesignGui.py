@@ -451,14 +451,99 @@ class PadProfileRegions(unittest.TestCase):
         self.assertEqual(list(self.Pad.Profile[1]), ["InternalFace2"])
         self.assertEqual(regionList.count(), 1)
 
-        # edges of the sketch are not accepted
+        # an edge selects the whole sketch
         self.clickRegion("Edge1")
-        self.assertEqual(list(self.Pad.Profile[1]), ["InternalFace2"])
+        self.assertEqual(list(self.Pad.Profile[1]), [])
 
         # leaving the selection restores the visibility
         button.setChecked(False)
         self.assertEqual(self.Pad.Visibility, padVisible)
         self.assertEqual(self.Sketch.Visibility, sketchVisible)
+
+
+class ExtrudeWithoutProfile(unittest.TestCase):
+    """Pad without selection starts with no profile, which is picked in the task panel"""
+
+    def setUp(self):
+        import TestSketcherApp
+
+        self.Doc = App.newDocument("ExtrudeWithoutProfile")
+        self.Body = self.Doc.addObject("PartDesign::Body", "Body")
+        self.Sketch = self.Body.newObject("Sketcher::SketchObject", "Sketch")
+        self.Sketch.MakeInternals = True
+        # A square inside a square gives two closed regions
+        TestSketcherApp.CreateRectangleSketch(self.Sketch, (0, 0), (20, 20))
+        TestSketcherApp.CreateRectangleSketch(self.Sketch, (5, 5), (10, 10))
+        self.Doc.recompute()
+        FreeCADGui.activateView("Gui::View3DInventor", True)
+        FreeCADGui.activeView().setActiveObject("pdbody", self.Body)
+        FreeCADGui.Selection.clearSelection()
+
+    def tearDown(self):
+        FreeCADGui.Control.closeDialog()
+        FreeCADGui.ActiveDocument.resetEdit()
+        App.closeDocument(self.Doc.Name)
+
+    @staticmethod
+    def processEvents():
+        for _ in range(5):
+            QApplication.processEvents()
+
+    def startPad(self):
+        FreeCADGui.runCommand("PartDesign_Pad", 0)
+        self.processEvents()
+        pads = self.Doc.findObjects("PartDesign::Pad")
+        self.assertEqual(len(pads), 1)
+        self.assertIsNotNone(FreeCADGui.Control.activeTaskDialog())
+        return pads[0]
+
+    def pick(self, element):
+        FreeCADGui.Selection.addSelection(
+            self.Doc.Name, self.Body.Name, "{}.{}".format(self.Sketch.Name, element)
+        )
+        self.processEvents()
+
+    def testPickRegionAfterwards(self):
+        pad = self.startPad()
+        self.assertIsNone(pad.Profile)
+        button = FreeCADGui.getMainWindow().findChild(QtGui.QToolButton, "buttonProfileRegions")
+        self.assertTrue(button.isChecked())
+
+        self.pick("InternalFace1")
+        self.assertEqual(pad.Profile[0], self.Sketch)
+        self.assertEqual(list(pad.Profile[1]), ["InternalFace1"])
+
+        FreeCADGui.Control.activeTaskDialog().accept()
+        self.processEvents()
+        self.assertTrue(pad.Shape.isValid())
+        self.assertIn(round(pad.Shape.Volume), (1000, 3000))
+
+    def testPickWholeSketchByEdge(self):
+        pad = self.startPad()
+        self.pick("Edge1")
+        self.assertEqual(pad.Profile[0], self.Sketch)
+        self.assertEqual(list(pad.Profile[1]), [])
+
+        FreeCADGui.Control.activeTaskDialog().accept()
+        self.processEvents()
+        # The inner square is a hole of the whole sketch
+        self.assertAlmostEqual(pad.Shape.Volume, 3000)
+
+    def testAcceptWithoutProfileKeepsDialog(self):
+        self.startPad()
+        warning = CallableRejectUnexpectedDialog()
+        QtCore.QTimer.singleShot(200, warning)
+        FreeCADGui.Control.activeTaskDialog().accept()
+        self.processEvents()
+        self.assertTrue(warning.shown, "No warning about the missing profile")
+        self.assertIsNotNone(FreeCADGui.Control.activeTaskDialog())
+
+    def testCancelRemovesPad(self):
+        self.startPad()
+        FreeCADGui.Control.activeTaskDialog().reject()
+        self.processEvents()
+        self.assertEqual(len(self.Doc.findObjects("PartDesign::Pad")), 0)
+        self.assertTrue(self.Sketch.Visibility)
 
 
 class Timeline(unittest.TestCase):

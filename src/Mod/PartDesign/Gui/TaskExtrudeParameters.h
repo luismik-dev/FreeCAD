@@ -287,6 +287,7 @@ private:
     Operation currentOperation() const;
     void updateProfileRegions();
     void setProfileRegions(const std::vector<std::string>& regions);
+    void setProfile(App::DocumentObject* profile, const std::vector<std::string>& elements);
     std::vector<std::string> getProfileRegions() const;
     void enterProfileRegionSelection();
     void exitProfileRegionSelection();
@@ -324,7 +325,8 @@ protected:
     QAction* removeProfileRegionAction = nullptr;
     // View providers hidden while sketch regions are selected
     std::vector<Gui::ViewProvider*> hiddenForProfileSelection;
-    bool profileWasVisible = true;
+    // Sketches shown while profiles are selected
+    std::vector<Gui::ViewProvider*> shownForProfileSelection;
     bool newBodyRequested = false;
 
     std::unique_ptr<Ui_TaskPadPocketParameters> ui;

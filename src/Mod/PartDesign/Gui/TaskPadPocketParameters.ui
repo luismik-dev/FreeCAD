@@ -23,10 +23,10 @@
       <item>
        <widget class="QToolButton" name="buttonProfileRegions">
         <property name="toolTip">
-         <string>Click closed regions of the sketch to add them to or remove them from the profile</string>
+         <string>Click closed regions of sketches, sketch edges for whole sketches, or planar faces to use them as profile. Clicking a region again removes it.</string>
         </property>
         <property name="text">
-         <string>Select Regions</string>
+         <string>Select Profiles</string>
         </property>
         <property name="checkable">
          <bool>true</bool>

@@ -43,6 +43,7 @@
 #include <Gui/CommandT.h>
 #include <Gui/Control.h>
 #include <Gui/Document.h>
+#include <Gui/ViewProviderDocumentObject.h>
 #include <Gui/MainWindow.h>
 #include <Gui/Selection/Selection.h>
 #include <Gui/Selection/SelectionObject.h>
@@ -1242,8 +1243,24 @@ void finishProfileBased(const Gui::Command* cmd, const Part::Feature* sketch, Ap
     finishFeature(cmd, Feat);
 }
 
+// Leaves the edit mode of a sketch, like other CAD programs do when extruding while sketching
+static void finishSketchInEdit()
+{
+    Gui::Document* doc = Gui::Application::Instance->activeDocument();
+    if (!doc) {
+        return;
+    }
+    auto vp = dynamic_cast<Gui::ViewProviderDocumentObject*>(doc->getInEdit());
+    if (vp && vp->getObject()->isDerivedFrom<Sketcher::SketchObject>()) {
+        doc->resetEdit();
+        Gui::Selection().clearSelection();
+    }
+}
+
 void prepareProfileBased(Gui::Command* cmd, const std::string& which, double length)
 {
+    finishSketchInEdit();
+
     PartDesign::Body* pcActiveBody = PartDesignGui::getBody(true);
 
     if (!pcActiveBody) {
@@ -1271,6 +1288,18 @@ void prepareProfileBased(Gui::Command* cmd, const std::string& which, double len
 
         finishProfileBased(cmd, sketch, Feat);
     };
+
+    // Without a selection the profile is chosen in the task panel afterwards
+    if (Gui::Selection().getSelectionEx().empty()) {
+        std::string featureName = cmd->getUniqueObjectName(which.c_str(), pcActiveBody);
+        cmd->openCommand(std::string("Make ") + which);
+        FCMD_OBJ_CMD(
+            pcActiveBody,
+            "newObject('PartDesign::" << which << "','" << featureName << "')"
+        );
+        worker(nullptr, pcActiveBody->getDocument()->getObject(featureName.c_str()));
+        return;
+    }
 
     prepareProfileBased(pcActiveBody, cmd, which, worker);
 }

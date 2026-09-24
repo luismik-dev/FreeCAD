@@ -117,6 +117,18 @@ TextSet getUIStrings(Base::Type attacherType, eMapMode mmode)
                         "Attachment3D mode tooltip"
                     )
                 );
+            case mmPlaneThroughLine:
+                return TwoStrings(
+                    qApp->translate("Attacher3D", "Plane through line", "Attachment3D mode caption"),
+                    qApp->translate(
+                        "Attacher3D",
+                        "Plane contains a straight edge or line. At zero rotation it is parallel "
+                        "to the optional planar face, else to the sketch, datum line or adjacent "
+                        "planar face of the edge. Rotate it about the line with the attachment "
+                        "offset rotation about X.",
+                        "Attachment3D mode tooltip"
+                    )
+                );
             case mmFlatFace:
                 return TwoStrings(
                     qApp->translate("Attacher3D", "XY on plane", "Attachment3D mode caption"),
@@ -367,6 +379,18 @@ TextSet getUIStrings(Base::Type attacherType, eMapMode mmode)
                         "Plane origin is midway between two planar faces and its orientation "
                         "equally bisects their angle. For non-parallel faces the plane contains "
                         "their intersection line.",
+                        "AttachmentPlane mode tooltip"
+                    )
+                );
+            case mmPlaneThroughLine:
+                return TwoStrings(
+                    qApp->translate("Attacher2D", "Plane through line", "AttachmentPlane mode caption"),
+                    qApp->translate(
+                        "Attacher2D",
+                        "Plane contains a straight edge or line. At zero rotation it is parallel "
+                        "to the optional planar face, else to the sketch, datum line or adjacent "
+                        "planar face of the edge. Rotate it about the line with the attachment "
+                        "offset rotation about X.",
                         "AttachmentPlane mode tooltip"
                     )
                 );

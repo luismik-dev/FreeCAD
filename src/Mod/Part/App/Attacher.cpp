@@ -60,7 +60,10 @@
 #include <TopoDS_Iterator.hxx>
 #include <TopoDS_Shape.hxx>
 #include <TopoDS_Vertex.hxx>
+#include <TopExp.hxx>
 #include <TopTools_HSequenceOfShape.hxx>
+#include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
+#include <TopTools_ListOfShape.hxx>
 #include <GeomAbs_CurveType.hxx>
 
 #include <App/Application.h>
@@ -70,6 +73,7 @@
 
 #include "Attacher.h"
 #include "AttachExtension.h"
+#include "Part2DObject.h"
 #include "Tools.h"
 
 #include <Geometry.h>
@@ -265,6 +269,7 @@ const char* AttachEngine::eMapModeStrings[] = {
     "ParallelPlane",
     "MidPoint",
     "MidPlane",
+    "PlaneThroughLine",
 
     nullptr
 };
@@ -1361,6 +1366,10 @@ AttachEngine3D::AttachEngine3D()
     modeRefTypes[mmFlatFace].push_back(cat(rtFlatFace));
     modeRefTypes[mmMidPlane].push_back(cat(rtFlatFace, rtFlatFace));
 
+    // Not cat(rtLine), which would take precedence over mmNormalToPath when suggesting a mode
+    modeRefTypes[mmPlaneThroughLine].push_back(cat(rtEdge));
+    modeRefTypes[mmPlaneThroughLine].push_back(cat(rtLine, rtFlatFace));
+
     modeRefTypes[mmTangentPlane].push_back(cat(rtFace, rtVertex));
     modeRefTypes[mmTangentPlane].push_back(cat(rtVertex, rtFace));
 
@@ -1681,6 +1690,90 @@ Base::Placement AttachEngine3D::_calculateAttachedPlacement(
 
             SketchNormal = gp_Dir(midPlane.normal);
             SketchBasePoint = midPlane.project(centersMidPoint);
+        } break;
+        case mmPlaneThroughLine: {
+            // A datum line lies along the X axis of its placement
+            bool isLineObject = subObj && subObj->isDerivedFrom<App::Line>();
+            const TopoDS_Shape& sh = shapes[0]->getShape();
+            gp_Dir lineDir;
+            if (isLineObject) {
+                Base::Vector3d dir;
+                Place.getRotation().multVec(Base::Vector3d(1, 0, 0), dir);
+                lineDir = gp_Dir(dir.x, dir.y, dir.z);
+                SketchBasePoint = refOrg;
+            }
+            else {
+                if (sh.IsNull() || sh.ShapeType() != TopAbs_EDGE) {
+                    throw Base::ValueError(
+                        "AttachEngine3D::calculateAttachedPlacement: need a straight edge."
+                    );
+                }
+                BRepAdaptor_Curve crv(TopoDS::Edge(sh));
+                if (crv.GetType() != GeomAbs_Line) {
+                    throw Base::ValueError(
+                        "AttachEngine3D::calculateAttachedPlacement: the edge is not straight."
+                    );
+                }
+                lineDir = crv.Line().Direction();
+                double u1 = crv.FirstParameter();
+                double u2 = crv.LastParameter();
+                if (Precision::IsInfinite(u1) || Precision::IsInfinite(u2)) {
+                    u1 = u2 = 0.0;
+                }
+                SketchBasePoint = crv.Value((u1 + u2) / 2.0);
+            }
+
+            // The plane at zero angle contains the line and is parallel to, in this order:
+            // the given face, the sketch or datum line it belongs to, a planar face adjacent
+            // to the edge, or the global XY or XZ plane.
+            std::vector<gp_Dir> normals;
+            if (shapes.size() >= 2) {
+                normals.push_back(getPlanarFaceInfo(*shapes[1], precision).normal);
+            }
+            if (isLineObject || (subObj && subObj->isDerivedFrom<Part::Part2DObject>())) {
+                Base::Vector3d dir;
+                Place.getRotation().multVec(Base::Vector3d(0, 0, 1), dir);
+                normals.emplace_back(dir.x, dir.y, dir.z);
+            }
+            else {
+                TopoShape parent = Feature::getTopoShape(
+                    objs[0],
+                    ShapeOption::ResolveLink | ShapeOption::Transform,
+                    Data::noElementName(subs[0].c_str()).c_str()
+                );
+                TopTools_IndexedDataMapOfShapeListOfShape edgeFaces;
+                if (!parent.isNull()) {
+                    TopExp::MapShapesAndAncestors(
+                        parent.getShape(),
+                        TopAbs_EDGE,
+                        TopAbs_FACE,
+                        edgeFaces
+                    );
+                }
+                int index = edgeFaces.FindIndex(sh);
+                if (index > 0) {
+                    for (const auto& face : edgeFaces.FindFromIndex(index)) {
+                        BRepAdaptor_Surface surf(TopoDS::Face(face));
+                        if (surf.GetType() == GeomAbs_Plane) {
+                            normals.push_back(surf.Plane().Axis().Direction());
+                            break;
+                        }
+                    }
+                }
+            }
+            normals.emplace_back(0, 0, 1);
+            normals.emplace_back(0, 1, 0);
+
+            for (const auto& normal : normals) {
+                gp_Vec perpendicular = gp_Vec(normal).Subtracted(
+                    gp_Vec(lineDir).Multiplied(gp_Vec(normal).Dot(gp_Vec(lineDir)))
+                );
+                if (perpendicular.Magnitude() > Precision::Confusion()) {
+                    SketchNormal = gp_Dir(perpendicular);
+                    break;
+                }
+            }
+            SketchXAxis = gp_Vec(lineDir);
         } break;
         case mmTangentPlane: {
             if (shapes.size() < 2) {

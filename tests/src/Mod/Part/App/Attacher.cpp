@@ -4,6 +4,7 @@
 #include "PartTestHelpers.h"
 
 #include <src/App/InitApplication.h>
+#include <App/Datums.h>
 #include <App/Document.h>
 #include <Mod/Part/App/Attacher.h>
 
@@ -179,6 +180,7 @@ TEST_F(AttacherTest, TestAllStringModesValid)
         "ParallelPlane",
         "MidPoint",
         "MidPlane",
+        "PlaneThroughLine",
     };
     int index = 0;
     for (auto mode : modes) {
@@ -459,4 +461,129 @@ TEST_F(AttacherTest, TestMidPlaneOfParallelFaces)
     EXPECT_FALSE(_boxes[1]->isError());
     EXPECT_NEAR(std::abs(normal.x), 1, 1e-7);
     EXPECT_NEAR(plm.getPosition().x, 0.5, 1e-7);
+}
+
+namespace
+{
+Base::Vector3d planeNormal(const Base::Placement& plm)
+{
+    Base::Vector3d normal;
+    plm.getRotation().multVec(Base::Vector3d(0, 0, 1), normal);
+    return normal;
+}
+
+// Name of the box edge from (0, 0, 0) to (0, 0, 3)
+std::string verticalEdgeAtOrigin(const TopoShape& box)
+{
+    for (int i = 1; i <= box.countSubShapes(TopAbs_EDGE); ++i) {
+        std::string name = "Edge" + std::to_string(i);
+        TopoDS_Edge edge = TopoDS::Edge(box.getSubShape(name.c_str()));
+        gp_Pnt p1 = BRep_Tool::Pnt(TopExp::FirstVertex(edge));
+        gp_Pnt p2 = BRep_Tool::Pnt(TopExp::LastVertex(edge));
+        if (p1.X() == 0 && p1.Y() == 0 && p2.X() == 0 && p2.Y() == 0) {
+            return name;
+        }
+    }
+    return {};
+}
+}  // namespace
+
+TEST_F(AttacherTest, TestPlaneThroughBoxEdge)
+{
+    // Arrange
+    std::string edge = verticalEdgeAtOrigin(_boxes[0]->Shape.getShape());
+    ASSERT_FALSE(edge.empty());
+    _boxes[1]->AttachmentSupport.setValue(_boxes[0], std::vector<std::string> {edge});
+    _boxes[1]->MapMode.setValue(mmPlaneThroughLine);
+
+    // Act
+    _boxes[1]->recomputeFeature();
+
+    // Assert: the plane contains the edge and is parallel to an adjacent face (x = 0 or y = 0)
+    Base::Placement plm = _boxes[1]->Placement.getValue();
+    Base::Vector3d normal = planeNormal(plm);
+    EXPECT_FALSE(_boxes[1]->isError());
+    EXPECT_TRUE(plm.getPosition().IsEqual(Base::Vector3d(0, 0, 1.5), 1e-7));
+    EXPECT_NEAR(std::abs(normal.x) + std::abs(normal.y), 1, 1e-7);
+    EXPECT_NEAR(normal.z, 0, 1e-7);
+    Base::Vector3d xAxis;
+    plm.getRotation().multVec(Base::Vector3d(1, 0, 0), xAxis);
+    EXPECT_NEAR(std::abs(xAxis.z), 1, 1e-7);
+
+    // Act: rotate about the line
+    _boxes[1]->AttachmentOffset.setValue(
+        Base::Placement(Base::Vector3d(), Base::Rotation(Base::Vector3d(1, 0, 0), M_PI / 2))
+    );
+    _boxes[1]->recomputeFeature();
+
+    // Assert: still containing the edge, perpendicular to the plane at zero angle
+    Base::Placement rotated = _boxes[1]->Placement.getValue();
+    EXPECT_TRUE(rotated.getPosition().IsEqual(Base::Vector3d(0, 0, 1.5), 1e-7));
+    EXPECT_NEAR(planeNormal(rotated).Dot(normal), 0, 1e-7);
+    EXPECT_NEAR(planeNormal(rotated).z, 0, 1e-7);
+}
+
+TEST_F(AttacherTest, TestPlaneThroughLineParallelToFace)
+{
+    // Arrange: the top face of the box (z = 3) defines the plane at zero angle
+    _boxes[1]->AttachmentSupport.setValues(
+        std::vector<App::DocumentObject*> {_boxes[2], _boxes[0]},
+        std::vector<std::string> {"Edge1", "Face6"}
+    );
+    _boxes[1]->MapMode.setValue(mmPlaneThroughLine);
+    TopoDS_Edge line = TopoDS::Edge(_boxes[2]->Shape.getShape().getSubShape("Edge1"));
+    gp_Pnt p1 = BRep_Tool::Pnt(TopExp::FirstVertex(line));
+    gp_Pnt p2 = BRep_Tool::Pnt(TopExp::LastVertex(line));
+
+    // Act
+    _boxes[1]->recomputeFeature();
+
+    // Assert
+    Base::Placement plm = _boxes[1]->Placement.getValue();
+    Base::Vector3d normal = planeNormal(plm);
+    Base::Vector3d lineDir(p2.X() - p1.X(), p2.Y() - p1.Y(), p2.Z() - p1.Z());
+    EXPECT_FALSE(_boxes[1]->isError());
+    EXPECT_NEAR(normal.Dot(lineDir), 0, 1e-7);
+    EXPECT_NEAR(distanceFromPlane(plm, p1), 0, 1e-7);
+    EXPECT_NEAR(distanceFromPlane(plm, p2), 0, 1e-7);
+}
+
+TEST_F(AttacherTest, TestPlaneThroughDatumLine)
+{
+    // Arrange: a datum line along the global Y axis
+    auto line = dynamic_cast<App::Line*>(getDocument()->addObject("App::Line", "Line"));
+    ASSERT_TRUE(line);
+    line->Placement.setValue(
+        Base::Placement(Base::Vector3d(1, 0, 0), Base::Rotation(Base::Vector3d(0, 0, 1), M_PI / 2))
+    );
+    _boxes[1]->AttachmentSupport.setValue(line);
+    _boxes[1]->MapMode.setValue(mmPlaneThroughLine);
+
+    // Act
+    _boxes[1]->recomputeFeature();
+
+    // Assert: at zero angle the plane is the XY plane of the line, through its origin
+    Base::Placement plm = _boxes[1]->Placement.getValue();
+    EXPECT_FALSE(_boxes[1]->isError()) << _boxes[1]->getStatusString();
+    EXPECT_TRUE(plm.getPosition().IsEqual(Base::Vector3d(1, 0, 0), 1e-7));
+    EXPECT_NEAR(std::abs(planeNormal(plm).z), 1, 1e-7);
+}
+
+TEST_F(AttacherTest, TestSuggestModeForEdgeUnchanged)
+{
+    // Arrange
+    std::string edge = verticalEdgeAtOrigin(_boxes[0]->Shape.getShape());
+    _boxes[1]->AttachmentSupport.setValue(_boxes[0], std::vector<std::string> {edge});
+    auto& attacher = _boxes[1]->attacher();
+    SuggestResult result;
+
+    // Act
+    attacher.suggestMapModes(result);
+
+    // Assert
+    EXPECT_EQ(result.bestFitMode, mmNormalToPath);
+    EXPECT_NE(
+        std::find(result.allApplicableModes.begin(), result.allApplicableModes.end(), mmPlaneThroughLine),
+        result.allApplicableModes.end()
+    );
 }

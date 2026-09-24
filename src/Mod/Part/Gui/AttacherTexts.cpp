@@ -129,6 +129,18 @@ TextSet getUIStrings(Base::Type attacherType, eMapMode mmode)
                         "Attachment3D mode tooltip"
                     )
                 );
+            case mmTangentPlaneAtAngle:
+                return TwoStrings(
+                    qApp->translate("Attacher3D", "Tangent plane at angle", "Attachment3D mode caption"),
+                    qApp->translate(
+                        "Attacher3D",
+                        "Plane is tangent to a cylindrical or conical face. At zero rotation it "
+                        "touches the middle of the face, or is parallel to the optional planar "
+                        "face. The attachment offset rotation about X turns it around the axis of "
+                        "the face.",
+                        "Attachment3D mode tooltip"
+                    )
+                );
             case mmFlatFace:
                 return TwoStrings(
                     qApp->translate("Attacher3D", "XY on plane", "Attachment3D mode caption"),
@@ -391,6 +403,18 @@ TextSet getUIStrings(Base::Type attacherType, eMapMode mmode)
                         "to the optional planar face, else to the sketch, datum line or adjacent "
                         "planar face of the edge. Rotate it about the line with the attachment "
                         "offset rotation about X.",
+                        "AttachmentPlane mode tooltip"
+                    )
+                );
+            case mmTangentPlaneAtAngle:
+                return TwoStrings(
+                    qApp->translate("Attacher2D", "Tangent plane at angle", "AttachmentPlane mode caption"),
+                    qApp->translate(
+                        "Attacher2D",
+                        "Plane is tangent to a cylindrical or conical face. At zero rotation it "
+                        "touches the middle of the face, or is parallel to the optional planar "
+                        "face. The attachment offset rotation about X turns it around the axis of "
+                        "the face.",
                         "AttachmentPlane mode tooltip"
                     )
                 );

@@ -7,6 +7,7 @@
 #include <App/Datums.h>
 #include <App/Document.h>
 #include <Mod/Part/App/Attacher.h>
+#include <Mod/Part/App/PrimitiveFeature.h>
 
 #include <BRep_Tool.hxx>
 #include <TopExp.hxx>
@@ -181,6 +182,7 @@ TEST_F(AttacherTest, TestAllStringModesValid)
         "MidPoint",
         "MidPlane",
         "PlaneThroughLine",
+        "TangentPlaneAtAngle",
     };
     int index = 0;
     for (auto mode : modes) {
@@ -586,4 +588,63 @@ TEST_F(AttacherTest, TestSuggestModeForEdgeUnchanged)
         std::find(result.allApplicableModes.begin(), result.allApplicableModes.end(), mmPlaneThroughLine),
         result.allApplicableModes.end()
     );
+}
+
+TEST_F(AttacherTest, TestTangentPlaneAtAngle)
+{
+    // Arrange: a cylinder of radius 2 around the Z axis, and the face x = 1 of the box
+    auto cylinder = getDocument()->addObject<Part::Cylinder>();
+    cylinder->Radius.setValue(2);
+    cylinder->Height.setValue(5);
+    cylinder->recomputeFeature();
+    _boxes[1]->AttachmentSupport.setValues(
+        std::vector<App::DocumentObject*> {cylinder, _boxes[0]},
+        std::vector<std::string> {"Face1", "Face2"}
+    );
+    _boxes[1]->MapMode.setValue(mmTangentPlaneAtAngle);
+
+    // Act
+    _boxes[1]->recomputeFeature();
+
+    // Assert: parallel to the box face, touching the cylinder
+    Base::Placement plm = _boxes[1]->Placement.getValue();
+    EXPECT_FALSE(_boxes[1]->isError()) << _boxes[1]->getStatusString();
+    EXPECT_NEAR(planeNormal(plm).x, 1, 1e-7);
+    EXPECT_NEAR(plm.getPosition().x, 2, 1e-7);
+    EXPECT_NEAR(plm.getPosition().y, 0, 1e-7);
+
+    // Act: turn it by 90 degrees around the axis
+    _boxes[1]->AttachmentOffset.setValue(
+        Base::Placement(Base::Vector3d(), Base::Rotation(Base::Vector3d(1, 0, 0), M_PI / 2))
+    );
+    _boxes[1]->recomputeFeature();
+
+    // Assert
+    plm = _boxes[1]->Placement.getValue();
+    EXPECT_NEAR(planeNormal(plm).y, 1, 1e-7);
+    EXPECT_NEAR(plm.getPosition().x, 0, 1e-7);
+    EXPECT_NEAR(plm.getPosition().y, 2, 1e-7);
+}
+
+TEST_F(AttacherTest, TestTangentPlaneTouchesFace)
+{
+    // Arrange
+    auto cylinder = getDocument()->addObject<Part::Cylinder>();
+    cylinder->Radius.setValue(2);
+    cylinder->Height.setValue(5);
+    cylinder->recomputeFeature();
+    _boxes[1]->AttachmentSupport.setValue(cylinder, std::vector<std::string> {"Face1"});
+    _boxes[1]->MapMode.setValue(mmTangentPlaneAtAngle);
+
+    // Act
+    _boxes[1]->recomputeFeature();
+
+    // Assert: the plane origin is on the surface and the normal points away from the axis
+    Base::Placement plm = _boxes[1]->Placement.getValue();
+    Base::Vector3d pos = plm.getPosition();
+    Base::Vector3d radial(pos.x, pos.y, 0);
+    EXPECT_FALSE(_boxes[1]->isError()) << _boxes[1]->getStatusString();
+    EXPECT_NEAR(radial.Length(), 2, 1e-7);
+    EXPECT_NEAR(planeNormal(plm).Dot(radial / 2), 1, 1e-7);
+    EXPECT_NEAR(pos.z, 2.5, 1e-7);
 }

@@ -70,6 +70,7 @@
 #include <App/Document.h>
 #include <App/Datums.h>
 #include <Base/Console.h>
+#include <Base/Tools.h>
 
 #include "Attacher.h"
 #include "AttachExtension.h"
@@ -270,6 +271,7 @@ const char* AttachEngine::eMapModeStrings[] = {
     "MidPoint",
     "MidPlane",
     "PlaneThroughLine",
+    "TangentPlaneAtAngle",
 
     nullptr
 };
@@ -1370,6 +1372,11 @@ AttachEngine3D::AttachEngine3D()
     modeRefTypes[mmPlaneThroughLine].push_back(cat(rtEdge));
     modeRefTypes[mmPlaneThroughLine].push_back(cat(rtLine, rtFlatFace));
 
+    modeRefTypes[mmTangentPlaneAtAngle].push_back(cat(rtCylindricalFace));
+    modeRefTypes[mmTangentPlaneAtAngle].push_back(cat(rtConicalFace));
+    modeRefTypes[mmTangentPlaneAtAngle].push_back(cat(rtCylindricalFace, rtFlatFace));
+    modeRefTypes[mmTangentPlaneAtAngle].push_back(cat(rtConicalFace, rtFlatFace));
+
     modeRefTypes[mmTangentPlane].push_back(cat(rtFace, rtVertex));
     modeRefTypes[mmTangentPlane].push_back(cat(rtVertex, rtFace));
 
@@ -1774,6 +1781,70 @@ Base::Placement AttachEngine3D::_calculateAttachedPlacement(
                 }
             }
             SketchXAxis = gp_Vec(lineDir);
+        } break;
+        case mmTangentPlaneAtAngle: {
+            TopoDS_Face face;
+            if (!shapes[0]->isNull() && shapes[0]->shapeType() == TopAbs_FACE) {
+                face = TopoDS::Face(shapes[0]->getShape());
+            }
+            if (face.IsNull()) {
+                throw Base::ValueError(
+                    "AttachEngine3D::calculateAttachedPlacement: need a cylindrical or conical face."
+                );
+            }
+            BRepAdaptor_Surface surf(face);
+            gp_Ax3 position;
+            if (surf.GetType() == GeomAbs_Cylinder) {
+                position = surf.Cylinder().Position();
+            }
+            else if (surf.GetType() == GeomAbs_Cone) {
+                position = surf.Cone().Position();
+            }
+            else {
+                throw Base::ValueError(
+                    "AttachEngine3D::calculateAttachedPlacement: need a cylindrical or conical face."
+                );
+            }
+
+            // At zero angle the plane touches the face in its middle, or is parallel to the
+            // given planar face. The offset rotation about X turns it around the axis.
+            double u = (surf.FirstUParameter() + surf.LastUParameter()) / 2.0;
+            double v = (surf.FirstVParameter() + surf.LastVParameter()) / 2.0;
+            if (shapes.size() >= 2) {
+                gp_Dir normal = getPlanarFaceInfo(*shapes[1], precision).normal;
+                gp_Vec dir(normal);
+                u = std::atan2(dir.Dot(gp_Vec(position.YDirection())), dir.Dot(gp_Vec(position.XDirection())));
+            }
+            double yaw, pitch, roll;
+            attachmentOffset.getRotation().getYawPitchRoll(yaw, pitch, roll);
+            u += Base::toRadians(roll);
+
+            gp_Pnt point;
+            gp_Vec du, dv;
+            surf.D1(u, v, point, du, dv);
+            gp_Dir normal;
+            Standard_Boolean done;
+            Tools::getNormal(face, u, v, Precision::Confusion(), normal, done);
+            if (!done) {
+                throw Base::ValueError(
+                    "AttachEngine3D::calculateAttachedPlacement: no normal on the face."
+                );
+            }
+
+            Base::Placement plm = this->placementFactory(
+                normal,
+                dv,
+                point,
+                gp_Pnt(),
+                /*useRefOrg_Line = */ false,
+                /*useRefOrg_Plane = */ false,
+                /*makeYVertical = */ false,
+                /*makeLegacyFlatFaceOrientation = */ false,
+                &Place
+            );
+            Base::Rotation rest;
+            rest.setYawPitchRoll(yaw, pitch, 0.0);
+            return plm * Base::Placement(attachmentOffset.getPosition(), rest);
         } break;
         case mmTangentPlane: {
             if (shapes.size() < 2) {

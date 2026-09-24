@@ -368,6 +368,18 @@ class ConstructionPlaneCommandTestCases(unittest.TestCase):
         FreeCADGui.Control.activeTaskDialog().accept()
         self.assertIn(self.planes()[0], part.Group)
 
+    def testModelSize(self):
+        FreeCADGui.Selection.addSelection(self.Doc.Name, self.Box.Name, "Face6")
+        FreeCADGui.runCommand("Part_OffsetPlane")
+        FreeCADGui.updateGui()
+        FreeCADGui.Control.activeTaskDialog().accept()
+        self.assertEqual(self.planes()[0].ViewObject.SizeMode, "Model")
+        datum = self.Doc.addObject("Part::DatumPlane", "Datum")
+        self.assertEqual(datum.ViewObject.SizeMode, "Screen")
+        # Switching back and forth does not break the plane
+        self.planes()[0].ViewObject.SizeMode = "Screen"
+        self.planes()[0].ViewObject.SizeMode = "Model"
+
     def testGroupCommand(self):
         self.assertIn("Part_ConstructionPlanes", FreeCADGui.listCommands())
         for name in (

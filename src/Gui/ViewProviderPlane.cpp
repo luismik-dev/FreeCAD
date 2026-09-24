@@ -35,6 +35,7 @@
 
 #include <App/Datums.h>
 #include <App/Document.h>
+#include <Gui/Inventor/SoAxisCrossKit.h>
 #include <Gui/ViewParams.h>
 
 #include "ViewProviderPlane.h"
@@ -199,6 +200,7 @@ void ViewProviderPlane::updatePlaneSize()
 
     const auto params = ViewParams::instance();
 
+    soScale->active = true;
     const float size = params->getDatumPlaneSize() * Base::fromPercent(params->getDatumScale());
     const float offset = 8.0F;
 

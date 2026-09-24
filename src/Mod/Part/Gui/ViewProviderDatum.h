@@ -25,6 +25,7 @@
 
 #pragma once
 
+#include <Base/Vector3D.h>
 #include <Gui/ViewProviderLine.h>
 #include <Gui/ViewProviderPlane.h>
 #include <Gui/ViewProviderPoint.h>
@@ -59,9 +60,27 @@ public:
     ViewProviderPlane();
     ~ViewProviderPlane() override = default;
 
+    /// Drawn with a fixed size on the screen, or covering its references in the model
+    App::PropertyEnumeration SizeMode;
+
     bool doubleClicked() override;
     bool setEdit(int ModNum) override;
     void unsetEdit(int ModNum) override;
+
+    /// The middle of the drawn plane, in its own coordinates
+    Base::Vector3d getDisplayCenter() const
+    {
+        return displayCenter;
+    }
+
+protected:
+    void onChanged(const App::Property* prop) override;
+    void updateData(const App::Property* prop) override;
+    void updatePlaneSize() override;
+
+private:
+    static const char* SizeModeEnums[];
+    Base::Vector3d displayCenter;
 };
 
 class PartGuiExport ViewProviderPoint: public Gui::ViewProviderPoint,

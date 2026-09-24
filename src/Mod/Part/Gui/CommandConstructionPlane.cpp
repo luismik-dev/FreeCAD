@@ -92,6 +92,7 @@ protected:
         openCommand(QT_TRANSLATE_NOOP("Command", "Create construction plane"));
         std::string name = getUniqueObjectName(objectName);
         doCommand(Doc, "obj = App.ActiveDocument.addObject('Part::DatumPlane', '%s')", name.c_str());
+        doCommand(Gui, "Gui.ActiveDocument.getObject('%s').SizeMode = 'Model'", name.c_str());
         if (App::DocumentObject* container = activeContainer()) {
             doCommand(
                 Doc,

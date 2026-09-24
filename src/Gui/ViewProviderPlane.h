@@ -56,16 +56,19 @@ public:
 
     void onSelectionChanged(const SelectionChanges&) override;
 
-private:
-    void updatePlaneSize();
+protected:
+    /// Sets the corners of the plane and the position of its label
+    virtual void updatePlaneSize();
 
+    CoinPtr<SoCoordinate3> pCoords;
+    CoinPtr<SoTranslation> pTextTranslation;
+
+private:
     bool isHovered {false};
     bool isSelected {false};
 
     CoinPtr<SoSwitch> labelSwitch;
     CoinPtr<SoAsciiText> pLabel;
-    CoinPtr<SoCoordinate3> pCoords;
-    CoinPtr<SoTranslation> pTextTranslation;
 
     ParamHandlers handlers;
 };

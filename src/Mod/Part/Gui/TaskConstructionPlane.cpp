@@ -56,6 +56,7 @@
 #include "TaskAttacher.h"
 #include "TaskConstructionPlane.h"
 #include "ViewProviderAttachExtension.h"
+#include "ViewProviderDatum.h"
 
 using namespace PartGui;
 using namespace Attacher;
@@ -705,8 +706,13 @@ void TaskConstructionPlane::setGizmoPositions()
     Base::Rotation rot = base.getRotation();
     Base::Vector3d origin = base.getPosition();
 
+    // The distance is dragged from the middle of the drawn plane
+    Base::Vector3d middle = origin;
+    if (auto vp = vpWeak.get<ViewProviderPlane>()) {
+        base.multVec(vp->getDisplayCenter(), middle);
+    }
     distanceGizmo->setVisibility(value == CP::Value::Distance);
-    distanceGizmo->Gizmo::setDraggerPlacement(origin, rot.multVec(Base::Vector3d(0, 0, 1)));
+    distanceGizmo->Gizmo::setDraggerPlacement(middle, rot.multVec(Base::Vector3d(0, 0, 1)));
 
     angleGizmo->setVisibility(value == CP::Value::Angle);
     angleGizmo->Gizmo::setDraggerPlacement(origin, rot.multVec(Base::Vector3d(0, 1, 0)));

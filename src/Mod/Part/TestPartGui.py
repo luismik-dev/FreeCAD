@@ -380,6 +380,24 @@ class ConstructionPlaneCommandTestCases(unittest.TestCase):
         self.planes()[0].ViewObject.SizeMode = "Screen"
         self.planes()[0].ViewObject.SizeMode = "Model"
 
+    def testModelSizeOfInfinitePlane(self):
+        # An offset from an origin plane falls back to the size on the screen
+        part = self.Doc.addObject("App::Part", "Part")
+        self.Doc.recompute()
+        yz = [o for o in part.Origin.OriginFeatures if o.Role == "YZ_Plane"][0]
+        sub = "{}.{}.".format(part.Origin.Name, yz.Name)
+        FreeCADGui.Selection.addSelection(self.Doc.Name, part.Name, sub)
+        FreeCADGui.runCommand("Part_OffsetPlane")
+        FreeCADGui.updateGui()
+        edit = FreeCADGui.getMainWindow().findChild(QtWidgets.QAbstractSpinBox, "valueEdit")
+        edit.setProperty("rawValue", 50.0)
+        FreeCADGui.Control.activeTaskDialog().accept()
+        FreeCADGui.updateGui()
+        plane = self.planes()[0]
+        self.assertEqual(plane.MapMode, "ObjectXY")
+        box = plane.ViewObject.getBoundingBox()
+        self.assertLess(box.DiagonalLength, 1e6)
+
     def testGroupCommand(self):
         self.assertIn("Part_ConstructionPlanes", FreeCADGui.listCommands())
         for name in (

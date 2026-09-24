@@ -121,7 +121,14 @@ void ViewProviderPlane::updatePlaneSize()
         if (shape.isNull()) {
             continue;
         }
+        // Origin planes and lines are infinite, and would make a plane too large to draw
+        constexpr double maxExtent = 1e7;
         Base::BoundBox3d refBox = shape.getBoundBox();
+        if (!refBox.IsValid() || refBox.MinX < -maxExtent || refBox.MinY < -maxExtent
+            || refBox.MinZ < -maxExtent || refBox.MaxX > maxExtent || refBox.MaxY > maxExtent
+            || refBox.MaxZ > maxExtent) {
+            continue;
+        }
         for (unsigned short corner = 0; corner < 8; ++corner) {
             Base::Vector3d point = refBox.CalcPoint(corner);
             toPlane.multVec(point, point);

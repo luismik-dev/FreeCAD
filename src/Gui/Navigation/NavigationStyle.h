@@ -356,7 +356,7 @@ protected:
     SbBool doSpin();
     void spin_simplified(SbVec2f curpos, SbVec2f prevpos);
     void moveCursorPosition();
-    void saveCursorPosition(const SoEvent* const ev);
+    virtual void saveCursorPosition(const SoEvent* const ev);
 
     SbVec2f normalizePixelPos(SbVec2s pixpos);
     SbVec2f normalizePixelPos(SbVec2f pixpos);
@@ -565,8 +565,9 @@ private:
     SbBool lockButton1 {false};
 };
 
-/// Mouse navigation as known from Autodesk Fusion and Inventor. It uses the same
-/// button mapping as the Revit style and exists so that users of these programs find it.
+/// Mouse navigation as known from Autodesk Fusion and Inventor. It uses the button mapping
+/// of the Revit style. A double click with the middle button on the model pins the center
+/// of rotation there, one in empty space releases it.
 class GuiExport FusionNavigationStyle: public RevitNavigationStyle
 {
     using inherited = RevitNavigationStyle;
@@ -577,6 +578,26 @@ public:
     FusionNavigationStyle();
     ~FusionNavigationStyle() override;
     std::string userFriendlyName() const override;
+
+    /// The pinned center of rotation, if any
+    std::optional<SbVec3f> getPinnedRotationCenter() const
+    {
+        return pinnedCenter;
+    }
+    /// Pins the center of rotation to the model at the screen position, or releases it
+    /// if there is no model
+    void pinRotationCenter(const SbVec2s& pos);
+
+protected:
+    SbBool processSoEvent(const SoEvent* const ev) override;
+    void saveCursorPosition(const SoEvent* const ev) override;
+
+private:
+    void showPinnedRotationCenter();
+
+    std::optional<SbVec3f> pinnedCenter;
+    SbTime lastMiddleClickTime;
+    SbVec2s lastMiddleClickPos;
 };
 
 class GuiExport BlenderNavigationStyle: public UserNavigationStyle

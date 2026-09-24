@@ -889,6 +889,99 @@ class ConstructionPlanes(unittest.TestCase):
         self.assertAlmostEqual(plane.Placement.Base.z, 25.0)
 
 
+class FusionOrbitCenter(unittest.TestCase):
+    """A double click with the middle button pins the center of rotation"""
+
+    def setUp(self):
+        self.Doc = App.newDocument("FusionOrbitCenter")
+        self.Box = self.Doc.addObject("Part::Box", "Box")
+        self.Box.Length = 50
+        self.Box.Width = 50
+        self.Box.Height = 50
+        self.Doc.recompute()
+        FreeCADGui.activateView("Gui::View3DInventor", True)
+        self.View = FreeCADGui.ActiveDocument.ActiveView
+        self.View.setNavigationType("Gui::FusionNavigationStyle")
+        self.View.viewIsometric()
+        self.View.fitAll()
+        self.processEvents()
+        self.viewport = self.View.graphicsView().viewport()
+
+    def tearDown(self):
+        App.closeDocument(self.Doc.Name)
+
+    @staticmethod
+    def processEvents(ms=300):
+        import time
+
+        end = time.time() + ms / 1000.0
+        while time.time() < end:
+            QApplication.processEvents()
+
+    def rotationCenter(self):
+        """The position of the rotation center indicator, if shown"""
+        root = self.View.getViewer().getSceneGraph()
+        for i in range(root.getNumChildren()):
+            child = root.getChild(i)
+            if child.getTypeId().getName().getString() == "SoSkipBoundingGroup":
+                translation = child.getByName("translation")
+                if translation:
+                    return App.Vector(translation.translation.getValue().getValue())
+        return None
+
+    def doubleMiddleClick(self, pos):
+        from PySide6.QtTest import QTest
+
+        QTest.mouseMove(self.viewport, pos)
+        for _ in range(2):
+            QTest.mouseClick(self.viewport, QtCore.Qt.MiddleButton, QtCore.Qt.NoModifier, pos, 20)
+        self.processEvents()
+
+    def testPinAndRelease(self):
+        try:
+            from PySide6.QtTest import QTest
+            from pivy import coin
+        except ImportError:
+            self.skipTest("QtTest or pivy is not available")
+
+        center = self.viewport.rect().center()
+        self.doubleMiddleClick(center)
+        pinned = self.rotationCenter()
+        self.assertIsNotNone(pinned, "No rotation center after a double click on the box")
+        self.assertTrue(self.Box.Shape.BoundBox.isInside(pinned) or
+                        self.Box.Shape.distToShape(Part.Vertex(pinned))[0] < 1e-3)
+
+        # Orbiting keeps the pinned center
+        QTest.mousePress(self.viewport, QtCore.Qt.MiddleButton, QtCore.Qt.ShiftModifier, center)
+        for dx in range(0, 60, 10):
+            QTest.mouseMove(self.viewport, center + QtCore.QPoint(dx, dx // 2))
+            self.processEvents(30)
+        QTest.mouseRelease(
+            self.viewport, QtCore.Qt.MiddleButton, QtCore.Qt.ShiftModifier,
+            center + QtCore.QPoint(60, 30)
+        )
+        self.processEvents()
+        self.assertIsNotNone(self.rotationCenter())
+        self.assertTrue(self.rotationCenter().isEqual(pinned, 1e-4))
+
+        # A double click in empty space releases it
+        self.doubleMiddleClick(QtCore.QPoint(5, 5))
+        self.assertIsNone(self.rotationCenter())
+
+    def testSingleClickKeepsView(self):
+        try:
+            from PySide6.QtTest import QTest
+        except ImportError:
+            self.skipTest("QtTest is not available")
+
+        camera = self.View.getCamera()
+        pos = self.viewport.rect().center() + QtCore.QPoint(40, 20)
+        QTest.mouseClick(self.viewport, QtCore.Qt.MiddleButton, QtCore.Qt.NoModifier, pos)
+        self.processEvents(800)
+        self.assertEqual(self.View.getCamera(), camera)
+        self.assertIsNone(self.rotationCenter())
+
+
 class PadOperation(unittest.TestCase):
     """The operation of the Pad/Pocket task panel changes the feature type or the body"""
 

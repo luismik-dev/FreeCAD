@@ -45,6 +45,7 @@
 #include <gp_Elips.hxx>
 #include <gp_Hypr.hxx>
 #include <gp_Parab.hxx>
+#include <gp_Lin.hxx>
 #include <gp_Pln.hxx>
 #include <gp_Pnt.hxx>
 #include <gp_Circ.hxx>
@@ -1976,9 +1977,6 @@ Base::Placement AttachEngine3D::_calculateAttachedPlacement(
                     points.push_back(crv.Value(u1));
                     points.push_back(crv.Value(u2));
                 }
-                if (points.size() >= 3) {
-                    break;
-                }
             }
 
             if (points.size() < 3) {
@@ -1991,6 +1989,23 @@ Base::Placement AttachEngine3D::_calculateAttachedPlacement(
             gp_Pnt p0 = points[0];
             gp_Pnt p1 = points[1];
             gp_Pnt p2 = points[2];
+
+            // Two edges sharing a vertex give a third point on the first edge. Use the
+            // point furthest from the first edge instead, so that a plane can be made
+            // through two edges of a corner.
+            if (p0.Distance(p1) >= Precision::Confusion()) {
+                gp_Lin line01(p0, gp_Dir(gp_Vec(p0, p1)));
+                if (line01.Distance(p2) < Precision::Confusion()) {
+                    double maxDistance = Precision::Confusion();
+                    for (std::size_t i = 3; i < points.size(); ++i) {
+                        double distance = line01.Distance(points[i]);
+                        if (distance > maxDistance) {
+                            maxDistance = distance;
+                            p2 = points[i];
+                        }
+                    }
+                }
+            }
 
             gp_Vec vec01(p0, p1);
             gp_Vec vec02(p0, p2);

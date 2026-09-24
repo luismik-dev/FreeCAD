@@ -7,6 +7,10 @@
 #include <App/Document.h>
 #include <Mod/Part/App/Attacher.h>
 
+#include <BRep_Tool.hxx>
+#include <TopExp.hxx>
+#include <TopoDS.hxx>
+
 using namespace Part;
 using namespace Attacher;
 using namespace PartTestHelpers;
@@ -173,6 +177,8 @@ TEST_F(AttacherTest, TestAllStringModesValid)
         "OYX",
 
         "ParallelPlane",
+        "MidPoint",
+        "MidPlane",
     };
     int index = 0;
     for (auto mode : modes) {
@@ -363,4 +369,94 @@ TEST_F(AttacherTest, TestAllModesBoundaries)
     EXPECT_TRUE(
         boxesMatch(_boxes[1]->Shape.getBoundingBox(), Base::BoundBox3d(0.5, 1, 1.5, 3.5, 2, 3.5))
     );
+}
+
+namespace
+{
+// Distance of a point from the XY plane of the placement
+double distanceFromPlane(const Base::Placement& plm, const gp_Pnt& pnt)
+{
+    Base::Vector3d normal;
+    plm.getRotation().multVec(Base::Vector3d(0, 0, 1), normal);
+    Base::Vector3d point(pnt.X(), pnt.Y(), pnt.Z());
+    return (point - plm.getPosition()).Dot(normal);
+}
+}  // namespace
+
+TEST_F(AttacherTest, TestThreePointsPlaneThroughCornerEdges)
+{
+    // Arrange: all ordered pairs of box edges sharing a vertex
+    const TopoShape& box = _boxes[0]->Shape.getShape();
+    int edgeCount = box.countSubShapes(TopAbs_EDGE);
+    int pairs = 0;
+    for (int i = 1; i <= edgeCount; ++i) {
+        for (int j = 1; j <= edgeCount; ++j) {
+            std::string first = "Edge" + std::to_string(i);
+            std::string second = "Edge" + std::to_string(j);
+            TopoDS_Edge edge1 = TopoDS::Edge(box.getSubShape(first.c_str()));
+            TopoDS_Edge edge2 = TopoDS::Edge(box.getSubShape(second.c_str()));
+            TopoDS_Vertex common;
+            if (i == j || !TopExp::CommonVertex(edge1, edge2, common)) {
+                continue;
+            }
+            ++pairs;
+            _boxes[1]->AttachmentSupport.setValue(_boxes[0], std::vector<std::string> {first, second});
+            _boxes[1]->MapMode.setValue(mmThreePointsPlane);
+
+            // Act
+            _boxes[1]->recomputeFeature();
+
+            // Assert: both edges lie in the plane
+            EXPECT_FALSE(_boxes[1]->isError()) << first << " " << second;
+            Base::Placement plm = _boxes[1]->Placement.getValue();
+            for (const auto& edge : {edge1, edge2}) {
+                for (const auto& vertex : {TopExp::FirstVertex(edge), TopExp::LastVertex(edge)}) {
+                    EXPECT_NEAR(distanceFromPlane(plm, BRep_Tool::Pnt(vertex)), 0, 1e-7)
+                        << first << " " << second;
+                }
+            }
+        }
+    }
+    EXPECT_EQ(pairs, 48);  // 8 corners with 3 edges, 6 ordered pairs each
+}
+
+TEST_F(AttacherTest, TestThreePointsPlaneUnchangedForThreeVertices)
+{
+    // Arrange
+    _boxes[1]->AttachmentSupport.setValue(
+        _boxes[0],
+        std::vector<std::string> {"Vertex1", "Vertex3", "Vertex5"}
+    );
+    _boxes[1]->MapMode.setValue(mmThreePointsPlane);
+
+    // Act
+    _boxes[1]->recomputeFeature();
+
+    // Assert: the base point is the centroid of the points
+    auto p0 = BRep_Tool::Pnt(TopoDS::Vertex(_boxes[0]->Shape.getShape().getSubShape("Vertex1")));
+    auto p1 = BRep_Tool::Pnt(TopoDS::Vertex(_boxes[0]->Shape.getShape().getSubShape("Vertex3")));
+    auto p2 = BRep_Tool::Pnt(TopoDS::Vertex(_boxes[0]->Shape.getShape().getSubShape("Vertex5")));
+    Base::Vector3d centroid((p0.X() + p1.X() + p2.X()) / 3,
+                            (p0.Y() + p1.Y() + p2.Y()) / 3,
+                            (p0.Z() + p1.Z() + p2.Z()) / 3);
+    EXPECT_FALSE(_boxes[1]->isError());
+    EXPECT_TRUE(_boxes[1]->Placement.getValue().getPosition().IsEqual(centroid, 1e-7));
+}
+
+TEST_F(AttacherTest, TestMidPlaneOfParallelFaces)
+{
+    // Arrange: Face1 and Face2 of the 1 x 2 x 3 box are its faces at x = 0 and x = 1
+    _boxes[1]->AttachmentSupport.setValue(_boxes[0], std::vector<std::string> {"Face1", "Face2"});
+    _boxes[1]->MapMode.setValue(mmMidPlane);
+
+    // Act
+    _boxes[1]->recomputeFeature();
+
+    // Assert
+    Base::Placement plm = _boxes[1]->Placement.getValue();
+    Base::Vector3d normal;
+    plm.getRotation().multVec(Base::Vector3d(0, 0, 1), normal);
+    EXPECT_FALSE(_boxes[1]->isError());
+    EXPECT_NEAR(std::abs(normal.x), 1, 1e-7);
+    EXPECT_NEAR(plm.getPosition().x, 0.5, 1e-7);
 }

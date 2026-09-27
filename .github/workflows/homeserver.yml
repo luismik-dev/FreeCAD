@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
+# Builds and tests the fork with pixi on the self-hosted runner.
+
+name: Homeserver build
+
+on:
+  workflow_dispatch: ~
+  push:
+    branches: ['**']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: homeserver-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  Pixi:
+    uses: ./.github/workflows/sub_buildPixi.yml
+    with:
+      artifactBasename: Homeserver-${{ github.run_id }}
+      runners: '["self-hosted"]'
+      testOnBuildDir: true

@@ -7,7 +7,7 @@ name: Homeserver build
 on:
   workflow_dispatch: ~
   push:
-    branches: ['**']
+    branches: ['**', '!sync/**']  # sync branches are tested by upstream_sync.yml
 
 permissions:
   contents: read

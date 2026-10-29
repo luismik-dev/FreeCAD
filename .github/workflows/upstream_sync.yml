@@ -1,0 +1,139 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
+# Keeps the fork in sync with upstream FreeCAD. Merges the upstream branch into
+# the sync branch, builds and tests it on the self-hosted runner and opens (or
+# updates) a pull request into the base branch, which is merged manually.
+#
+# A conflicting merge fails the run, the summary lists the conflicting files and
+# how to resolve them. Pushing a resolution to the sync branch tests it and opens
+# the pull request.
+#
+# Needs the SYNC_TOKEN secret: a fine-grained personal access token for this
+# repository with read and write access to Contents, Workflows and Pull requests.
+# GITHUB_TOKEN can't push upstream changes to workflow files.
+
+name: Upstream sync
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch: ~
+  push:
+    branches: [sync/upstream]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_REPO: FreeCAD/FreeCAD
+  UPSTREAM_BRANCH: main
+  BASE_BRANCH: main
+  SYNC_BRANCH: sync/upstream
+
+jobs:
+  merge:
+    runs-on: self-hosted
+    outputs:
+      status: ${{ steps.sync.outputs.status }}
+      sha: ${{ steps.sync.outputs.sha }}
+      upstream_sha: ${{ steps.sync.outputs.upstream_sha }}
+      commit_count: ${{ steps.sync.outputs.commit_count }}
+      merge_base: ${{ steps.sync.outputs.merge_base }}
+    steps:
+      - name: Check token
+        env:
+          SYNC_TOKEN: ${{ secrets.SYNC_TOKEN }}
+        run: |
+          if [ -z "$SYNC_TOKEN" ]; then
+            echo "::error::The SYNC_TOKEN secret is not set, see the comment at the top of upstream_sync.yml."
+            exit 1
+          fi
+
+      - name: Checkout source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ env.BASE_BRANCH }}
+          fetch-depth: 0
+          token: ${{ secrets.SYNC_TOKEN }}
+
+      - name: Merge upstream
+        id: sync
+        run: bash .github/scripts/sync_upstream.sh
+
+      - name: Fail on merge conflicts
+        if: steps.sync.outputs.status == 'conflict'
+        run: |
+          echo "::error::Merging upstream conflicts, see the run summary for how to resolve it."
+          exit 1
+
+  test:
+    needs: merge
+    # A manually pushed sync branch is only tested once, when it is pushed.
+    if: >-
+      needs.merge.outputs.status == 'merged' ||
+      (needs.merge.outputs.status == 'manual' && github.event_name != 'schedule')
+    uses: ./.github/workflows/sub_buildPixi.yml
+    with:
+      artifactBasename: UpstreamSync-${{ github.run_id }}
+      ref: ${{ needs.merge.outputs.sha }}
+      runners: '["self-hosted"]'
+      testOnBuildDir: true
+
+  pull_request:
+    needs: [merge, test]
+    if: always() && (needs.test.result == 'success' || needs.test.result == 'failure')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Open or update pull request
+        env:
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SERVER_URL: ${{ github.server_url }}
+          SHA: ${{ needs.merge.outputs.sha }}
+          UPSTREAM_SHA: ${{ needs.merge.outputs.upstream_sha }}
+          COMMIT_COUNT: ${{ needs.merge.outputs.commit_count }}
+          MERGE_BASE: ${{ needs.merge.outputs.merge_base }}
+          TEST_RESULT: ${{ needs.test.result }}
+        run: |
+          set -euo pipefail
+
+          if [ "$TEST_RESULT" = "success" ]; then
+            result="✅ Build and tests passed on the self-hosted runner."
+          else
+            result="❌ Build or tests failed on the self-hosted runner, see the run for details."
+          fi
+
+          cat > body.md << EOF
+          Merges ${COMMIT_COUNT} new commits of ${UPSTREAM_REPO} \`${UPSTREAM_BRANCH}\` (up to ${UPSTREAM_REPO}@${UPSTREAM_SHA}) into \`${BASE_BRANCH}\`.
+
+          ${result} Tested commit ${SHA}, [workflow run](${RUN_URL}).
+
+          [Upstream changes](${SERVER_URL}/${UPSTREAM_REPO}/compare/${MERGE_BASE}...${UPSTREAM_SHA}) · [Changes against \`${BASE_BRANCH}\`](${SERVER_URL}/${REPO}/compare/${BASE_BRANCH}...${SYNC_BRANCH})
+
+          **Merge with "Create a merge commit"**, not squash or rebase, so the fork keeps sharing upstream's history and the next sync doesn't conflict on the same changes again.
+
+          _Opened by the [Upstream sync](${SERVER_URL}/${REPO}/blob/${BASE_BRANCH}/.github/workflows/upstream_sync.yml) workflow, it updates this pull request when upstream moves on._
+          EOF
+          title="Sync with upstream ${UPSTREAM_REPO} (${UPSTREAM_SHA:0:10})"
+
+          pr=$(gh pr list -R "$REPO" --head "$SYNC_BRANCH" --base "$BASE_BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -z "$pr" ]; then
+            draft=()
+            if [ "$TEST_RESULT" != "success" ]; then
+              draft=(--draft)
+            fi
+            gh pr create -R "$REPO" --head "$SYNC_BRANCH" --base "$BASE_BRANCH" \
+              --title "$title" --body-file body.md "${draft[@]}"
+          else
+            gh pr edit -R "$REPO" "$pr" --title "$title" --body-file body.md
+            if [ "$TEST_RESULT" = "success" ]; then
+              gh pr ready -R "$REPO" "$pr" || true
+            else
+              gh pr ready -R "$REPO" "$pr" --undo || true
+            fi
+          fi

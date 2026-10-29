@@ -1,0 +1,202 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
+# Builds an RPM (Fedora) and macOS DMGs of the fork. Self-contained: it does not
+# depend on the release workflow or any reusable sub-workflow. Packages are kept
+# as workflow artifacts, and attached to the release when run for a release.
+
+name: Build RPM and macOS
+
+on:
+  workflow_dispatch:
+    inputs:
+      fedora_version:
+        description: 'Fedora container image tag to build the RPM in'
+        default: 'latest'
+        type: string
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-rpm-macos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      build_tag: ${{ steps.get_tag.outputs.build_tag }}
+    steps:
+      - name: Get build tag
+        id: get_tag
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "$EVENT_NAME" = "release" ]; then
+            BUILD_TAG="$RELEASE_TAG"
+          else
+            # Sanitize branch name for use in file names (replace non-alphanumeric with -)
+            BUILD_TAG="$(echo "$REF_NAME" | sed 's/[^a-zA-Z0-9._-]/-/g')-$(date "+%Y.%m.%d")"
+          fi
+          echo "build_tag=${BUILD_TAG}" >> "$GITHUB_OUTPUT"
+
+  rpm:
+    needs: prepare
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      FEDORA_VERSION: ${{ inputs.fedora_version || 'latest' }}
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      # prevent running out of disk space, the RPM build is run in a container on the host disk
+      - name: Maximize build space
+        uses: AdityaGarg8/remove-unwanted-software@90e01b21170618765a73370fcc3abbd1684a7793 # v5
+        with:
+          verbose: 'true'
+          remove-android: 'true'      # (frees ~9 GB)
+          remove-cached-tools: 'true' # (frees ~8.3 GB)
+
+      - name: Checkout source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+          fetch-tags: true
+          submodules: 'recursive'
+
+      - name: Create source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Same archive as .packit.yaml creates, with git info baked in
+          python3 package/scripts/write_version_info.py freecad_version.txt
+          mkdir -p rpmbuild/SOURCES
+          git ls-files --recurse-submodules | tar -caf rpmbuild/SOURCES/freecad-sources.tar.gz -T-
+
+      - name: Build RPM in Fedora container
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "$PWD:/src" -w /src \
+            "registry.fedoraproject.org/fedora:${FEDORA_VERSION}" \
+            bash -euxo pipefail -c '
+              dnf -y install rpm-build dnf-plugins-core
+              dnf -y builddep --define "_without_tests 1" package/fedora/freecad.spec
+              rpmbuild -ba \
+                --define "_topdir /src/rpmbuild" \
+                --without tests \
+                --without debug_info \
+                package/fedora/freecad.spec
+              chown -R '"$(id -u):$(id -g)"' /src/rpmbuild
+            '
+
+      - name: Collect packages
+        id: collect
+        shell: bash
+        env:
+          BUILD_TAG: ${{ needs.prepare.outputs.build_tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          find rpmbuild/RPMS rpmbuild/SRPMS -name '*.rpm' -exec cp {} dist/ \;
+          cd dist
+          sha256sum *.rpm > "FreeCAD_${BUILD_TAG}-rpm-SHA256.txt"
+          ls -la
+
+      - name: Upload RPM artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: FreeCAD-${{ needs.prepare.outputs.build_tag }}-rpm
+          path: dist/*
+          if-no-files-found: error
+
+      - name: Attach RPMs to release
+        if: github.event_name == 'release'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_TAG: ${{ needs.prepare.outputs.build_tag }}
+        run: gh release upload --clobber "$BUILD_TAG" dist/*
+
+  macos:
+    needs: prepare
+    permissions:
+      contents: write
+    strategy:
+      matrix:
+        include:
+          - { target: osx-64, os: macos-15-intel, deploy_target: "10.13" }
+          - { target: osx-arm64, os: macos-latest, deploy_target: "11.0" }
+          - { target: osx-arm64, os: macos-latest, deploy_target: "15.0" }
+      fail-fast: false
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+          fetch-tags: true
+          submodules: 'recursive'
+
+      - uses: prefix-dev/setup-pixi@d3f436a425481402e6a95a1d1fc10331c708cd9e # v0.10.2
+        with:
+          pixi-version: v0.81.0
+          cache: false
+          locked: true
+
+      - name: Build FreeCAD
+        shell: bash
+        env:
+          TARGET_PLATFORM: ${{ matrix.target }}
+          MACOS_DEPLOYMENT_TARGET: ${{ matrix.deploy_target }}
+        run: |
+          set -euo pipefail
+          python3 package/scripts/write_version_info.py ../freecad_version.txt
+          pixi run --locked "bash package/bundle/build.sh"
+
+      - name: Create DMG (ad-hoc signed)
+        shell: bash
+        env:
+          TARGET_PLATFORM: ${{ matrix.target }}
+          MACOS_DEPLOYMENT_TARGET: ${{ matrix.deploy_target }}
+          MACOS_SIGN_RELEASE: "false"
+          UPLOAD_RELEASE: "false"
+          BUILD_TAG: ${{ needs.prepare.outputs.build_tag }}
+        run: |
+          set -euo pipefail
+          cd package/bundle
+          pixi run --locked bash -c "cd osx && bash create_bundle.sh"
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: FreeCAD-${{ needs.prepare.outputs.build_tag }}-macOS${{ matrix.deploy_target }}-${{ matrix.target }}
+          path: |
+            package/bundle/osx/*.dmg
+            package/bundle/osx/*.dmg-SHA256.txt
+          if-no-files-found: error
+
+      - name: Attach DMG to release
+        if: github.event_name == 'release'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_TAG: ${{ needs.prepare.outputs.build_tag }}
+        run: gh release upload --clobber "$BUILD_TAG" package/bundle/osx/*.dmg package/bundle/osx/*.dmg-SHA256.txt
